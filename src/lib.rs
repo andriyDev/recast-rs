@@ -1,7 +1,8 @@
 use std::ops::DerefMut;
 
 use recastnavigation_sys::{
-  rcCalcGridSize, rcCreateHeightfield, rcRasterizeTriangles2,
+  rcBuildCompactHeightfield, rcCalcGridSize, rcCreateHeightfield,
+  rcErodeWalkableArea, rcRasterizeTriangles2,
 };
 
 mod vector;
@@ -118,6 +119,62 @@ impl Heightfield {
   }
 
   // TODO: Add support for indexed triangles.
+
+  pub fn create_compact_heightfield(
+    mut self,
+    context: &mut Context,
+    walkable_height: i32,
+    walkable_climb: i32,
+  ) -> Result<CompactHeightfield, ()> {
+    let mut compact_heightfield = wrappers::RawCompactHeightfield::new()?;
+
+    // SAFETY: rcBuildCompactHeightfield only mutates `context.context`,
+    // `heightfield.heightfield`, and `compact_heightfield` which are mutably
+    // borrowed.
+    let built_compact_heightfield = unsafe {
+      rcBuildCompactHeightfield(
+        context.context.deref_mut(),
+        walkable_height,
+        walkable_climb,
+        self.heightfield.deref_mut(),
+        compact_heightfield.deref_mut(),
+      )
+    };
+
+    if built_compact_heightfield {
+      Ok(CompactHeightfield { compact_heightfield })
+    } else {
+      Err(())
+    }
+  }
+}
+
+pub struct CompactHeightfield {
+  compact_heightfield: wrappers::RawCompactHeightfield,
+}
+
+impl CompactHeightfield {
+  pub fn erode_walkable_area(
+    &mut self,
+    context: &mut Context,
+    radius: i32,
+  ) -> Result<(), ()> {
+    // SAFETY: rcErodeWalkableArea only mutates `context.context`, or
+    // `self.compact_heightfield`.
+    let eroded_area = unsafe {
+      rcErodeWalkableArea(
+        context.context.deref_mut(),
+        radius,
+        self.compact_heightfield.deref_mut(),
+      )
+    };
+
+    if eroded_area {
+      Ok(())
+    } else {
+      Err(())
+    }
+  }
 }
 
 #[cfg(test)]
@@ -149,5 +206,40 @@ mod tests {
     heightfield
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
+  }
+
+  #[test]
+  fn compact_heightfield_erodes_area() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let mut compact_heightfield = heightfield
+      .create_compact_heightfield(&mut context, 3, 0)
+      .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield
+      .erode_walkable_area(&mut context, 1)
+      .expect("erosion succeeds");
   }
 }
