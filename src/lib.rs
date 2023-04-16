@@ -1,9 +1,9 @@
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 
 use recastnavigation_sys::{
-  rcBuildCompactHeightfield, rcBuildDistanceField, rcBuildLayerRegions,
-  rcBuildRegions, rcBuildRegionsMonotone, rcCalcGridSize, rcCreateHeightfield,
-  rcErodeWalkableArea, rcRasterizeTriangles2,
+  rcBuildCompactHeightfield, rcBuildDistanceField, rcBuildHeightfieldLayers,
+  rcBuildLayerRegions, rcBuildRegions, rcBuildRegionsMonotone, rcCalcGridSize,
+  rcCreateHeightfield, rcErodeWalkableArea, rcRasterizeTriangles2,
 };
 
 mod vector;
@@ -177,6 +177,37 @@ impl CompactHeightfield {
     }
   }
 
+  pub fn build_heightfield_layer_set(
+    &self,
+    context: &mut Context,
+    border_size: i32,
+    walkable_height: i32,
+  ) -> Result<HeightfieldLayerSet, ()> {
+    let mut layer_set = wrappers::RawHeightfieldLayerSet::new()?;
+
+    // SAFETY: rcBuildHeightfieldLayers only mutates `context.context` and
+    // `layer_set`. It also only reads from `self.compact_heightfield`.
+    let build_succeeded = unsafe {
+      rcBuildHeightfieldLayers(
+        context.context.deref_mut(),
+        // TODO: Remove this gnarly cast once the compact_heightfield is passed
+        // by const ref.
+        self.compact_heightfield.deref()
+          as *const recastnavigation_sys::rcCompactHeightfield
+          as *mut recastnavigation_sys::rcCompactHeightfield,
+        border_size,
+        walkable_height,
+        layer_set.deref_mut(),
+      )
+    };
+
+    if build_succeeded {
+      Ok(HeightfieldLayerSet { layer_set })
+    } else {
+      Err(())
+    }
+  }
+
   fn build_distance_field(&mut self, context: &mut Context) -> Result<(), ()> {
     // SAFETY: rcBuildDistanceField only mutates `context.context`, or
     // `self.compact_heightfield`.
@@ -285,6 +316,10 @@ impl CompactHeightfield {
 
 pub struct CompactHeightfieldWithRegions {
   compact_heightfield: wrappers::RawCompactHeightfield,
+}
+
+pub struct HeightfieldLayerSet {
+  layer_set: wrappers::RawHeightfieldLayerSet,
 }
 
 #[cfg(test)]
@@ -432,5 +467,44 @@ mod tests {
     }
 
     compact_heightfield_builds_regions_base(build_fn);
+  }
+
+  #[test]
+  fn compact_heightfield_builds_heightfield_layers() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let mut compact_heightfield = heightfield
+      .create_compact_heightfield(&mut context, 3, 0)
+      .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield
+      .erode_walkable_area(&mut context, 1)
+      .expect("erosion succeeds");
+
+    compact_heightfield
+      .build_heightfield_layer_set(&mut context, 1, 3)
+      .expect("heightfield layers created");
   }
 }
