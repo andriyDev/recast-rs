@@ -63,10 +63,10 @@ impl Drop for RawHeightfield {
 
 impl RawHeightfield {
   // Creates a RecastHeightfield, or returns None if allocation failed.
-  pub fn new() -> Option<Self> {
+  pub fn new() -> Result<Self, ()> {
     // SAFETY: rcAllocHeightfield just allocates the rcHeightfield, or returns
     // null on failure.
-    NonNull::new(unsafe { rcAllocHeightfield() }).map(|ptr| Self(ptr))
+    NonNull::new(unsafe { rcAllocHeightfield() }).map(|ptr| Self(ptr)).ok_or(())
   }
 }
 
@@ -104,10 +104,12 @@ impl Drop for RawCompactHeightfield {
 
 impl RawCompactHeightfield {
   // Creates a RecastCompactHeightfield, or returns None if allocation failed.
-  pub fn new() -> Option<Self> {
+  pub fn new() -> Result<Self, ()> {
     // SAFETY: rcAllocCompactHeightfield just allocates the
     // rcCompactHeightfield, or returns null on failure.
-    NonNull::new(unsafe { rcAllocCompactHeightfield() }).map(|ptr| Self(ptr))
+    NonNull::new(unsafe { rcAllocCompactHeightfield() })
+      .map(|ptr| Self(ptr))
+      .ok_or(())
   }
 }
 
@@ -145,10 +147,12 @@ impl Drop for RawHeightfieldLayerSet {
 
 impl RawHeightfieldLayerSet {
   // Creates a RecastHeightfieldLayerSet, or returns None if allocation failed.
-  pub fn new() -> Option<Self> {
+  pub fn new() -> Result<Self, ()> {
     // SAFETY: rcAllocHeightfieldLayerSet just allocates the
     // rcHeightfieldLayerSet, or returns null on failure.
-    NonNull::new(unsafe { rcAllocHeightfieldLayerSet() }).map(|ptr| Self(ptr))
+    NonNull::new(unsafe { rcAllocHeightfieldLayerSet() })
+      .map(|ptr| Self(ptr))
+      .ok_or(())
   }
 }
 
@@ -186,10 +190,10 @@ impl Drop for RawContourSet {
 
 impl RawContourSet {
   // Creates a RecastContourSet, or returns None if allocation failed.
-  pub fn new() -> Option<Self> {
+  pub fn new() -> Result<Self, ()> {
     // SAFETY: rcAllocContourSet just allocates the rcContourSet, or returns
     // null on failure.
-    NonNull::new(unsafe { rcAllocContourSet() }).map(|ptr| Self(ptr))
+    NonNull::new(unsafe { rcAllocContourSet() }).map(|ptr| Self(ptr)).ok_or(())
   }
 }
 
@@ -227,10 +231,10 @@ impl Drop for RawPolyMesh {
 
 impl RawPolyMesh {
   // Creates a RecastPolyMesh, or returns None if allocation failed.
-  pub fn new() -> Option<Self> {
+  pub fn new() -> Result<Self, ()> {
     // SAFETY: rcAllocPolyMesh just allocates the rcPolyMesh, or returns
     // null on failure.
-    NonNull::new(unsafe { rcAllocPolyMesh() }).map(|ptr| Self(ptr))
+    NonNull::new(unsafe { rcAllocPolyMesh() }).map(|ptr| Self(ptr)).ok_or(())
   }
 }
 
@@ -268,10 +272,12 @@ impl Drop for RawPolyMeshDetail {
 
 impl RawPolyMeshDetail {
   // Creates a RecastPolyMeshDetail, or returns None if allocation failed.
-  pub fn new() -> Option<Self> {
+  pub fn new() -> Result<Self, ()> {
     // SAFETY: rcAllocPolyMeshDetail just allocates the rcPolyMeshDetail, or
     // returns null on failure.
-    NonNull::new(unsafe { rcAllocPolyMeshDetail() }).map(|ptr| Self(ptr))
+    NonNull::new(unsafe { rcAllocPolyMeshDetail() })
+      .map(|ptr| Self(ptr))
+      .ok_or(())
   }
 }
 

@@ -48,8 +48,7 @@ impl Heightfield {
       )
     };
 
-    let mut heightfield = wrappers::RawHeightfield::new()
-      .expect("allocation of RawHeightfield should succeed");
+    let mut heightfield = wrappers::RawHeightfield::new()?;
 
     // SAFETY: rcCreateHeightfield only modifies memory it owns, or
     // `context.context` or `heightfield`, which are mutably borrowed. Bounds
