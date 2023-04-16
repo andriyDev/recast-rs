@@ -1,7 +1,8 @@
 use std::ops::DerefMut;
 
 use recastnavigation_sys::{
-  rcBuildCompactHeightfield, rcCalcGridSize, rcCreateHeightfield,
+  rcBuildCompactHeightfield, rcBuildDistanceField, rcBuildLayerRegions,
+  rcBuildRegions, rcBuildRegionsMonotone, rcCalcGridSize, rcCreateHeightfield,
   rcErodeWalkableArea, rcRasterizeTriangles2,
 };
 
@@ -175,11 +176,123 @@ impl CompactHeightfield {
       Err(())
     }
   }
+
+  fn build_distance_field(&mut self, context: &mut Context) -> Result<(), ()> {
+    // SAFETY: rcBuildDistanceField only mutates `context.context`, or
+    // `self.compact_heightfield`.
+    let distance_field_built = unsafe {
+      rcBuildDistanceField(
+        context.context.deref_mut(),
+        self.compact_heightfield.deref_mut(),
+      )
+    };
+
+    if distance_field_built {
+      Ok(())
+    } else {
+      Err(())
+    }
+  }
+
+  pub fn build_regions(
+    mut self,
+    context: &mut Context,
+    border_size: i32,
+    min_region_area: i32,
+    merge_region_area: i32,
+  ) -> Result<CompactHeightfieldWithRegions, ()> {
+    self.build_distance_field(context)?;
+
+    // SAFETY: rcBuildRegions only mutates `context.context`, or
+    // `self.compact_heightfield`.
+    let regions_built = unsafe {
+      rcBuildRegions(
+        context.context.deref_mut(),
+        self.compact_heightfield.deref_mut(),
+        border_size,
+        min_region_area,
+        merge_region_area,
+      )
+    };
+
+    if regions_built {
+      Ok(CompactHeightfieldWithRegions {
+        compact_heightfield: self.compact_heightfield,
+      })
+    } else {
+      Err(())
+    }
+  }
+
+  pub fn build_layer_regions(
+    mut self,
+    context: &mut Context,
+    border_size: i32,
+    min_region_area: i32,
+  ) -> Result<CompactHeightfieldWithRegions, ()> {
+    self.build_distance_field(context)?;
+
+    // SAFETY: rcBuildLayerRegions only mutates `context.context`, or
+    // `self.compact_heightfield`.
+    let regions_built = unsafe {
+      rcBuildLayerRegions(
+        context.context.deref_mut(),
+        self.compact_heightfield.deref_mut(),
+        border_size,
+        min_region_area,
+      )
+    };
+
+    if regions_built {
+      Ok(CompactHeightfieldWithRegions {
+        compact_heightfield: self.compact_heightfield,
+      })
+    } else {
+      Err(())
+    }
+  }
+
+  pub fn build_regions_monotone(
+    mut self,
+    context: &mut Context,
+    border_size: i32,
+    min_region_area: i32,
+    merge_region_area: i32,
+  ) -> Result<CompactHeightfieldWithRegions, ()> {
+    self.build_distance_field(context)?;
+
+    // SAFETY: rcBuildRegionsMonotone only mutates `context.context`, or
+    // `self.compact_heightfield`.
+    let regions_built = unsafe {
+      rcBuildRegionsMonotone(
+        context.context.deref_mut(),
+        self.compact_heightfield.deref_mut(),
+        border_size,
+        min_region_area,
+        merge_region_area,
+      )
+    };
+
+    if regions_built {
+      Ok(CompactHeightfieldWithRegions {
+        compact_heightfield: self.compact_heightfield,
+      })
+    } else {
+      Err(())
+    }
+  }
+}
+
+pub struct CompactHeightfieldWithRegions {
+  compact_heightfield: wrappers::RawCompactHeightfield,
 }
 
 #[cfg(test)]
 mod tests {
-  use crate::{Context, Heightfield, Vec3, WALKABLE_AREA_ID};
+  use crate::{
+    CompactHeightfield, CompactHeightfieldWithRegions, Context, Heightfield,
+    Vec3, WALKABLE_AREA_ID,
+  };
 
   #[test]
   fn heightfield_rasterizes_triangles() {
@@ -241,5 +354,83 @@ mod tests {
     compact_heightfield
       .erode_walkable_area(&mut context, 1)
       .expect("erosion succeeds");
+  }
+
+  fn compact_heightfield_builds_regions_base(
+    build_fn: fn(
+      compact_heightfield: CompactHeightfield,
+      context: &mut Context,
+    ) -> Result<CompactHeightfieldWithRegions, ()>,
+  ) {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let mut compact_heightfield = heightfield
+      .create_compact_heightfield(&mut context, 3, 0)
+      .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield
+      .erode_walkable_area(&mut context, 1)
+      .expect("erosion succeeds");
+
+    build_fn(compact_heightfield, &mut context)
+      .expect("building regions succeeds");
+  }
+
+  #[test]
+  fn compact_heightfield_builds_regions() {
+    fn build_fn(
+      compact_heightfield: CompactHeightfield,
+      context: &mut Context,
+    ) -> Result<CompactHeightfieldWithRegions, ()> {
+      compact_heightfield.build_regions(context, 1, 1, 1)
+    }
+
+    compact_heightfield_builds_regions_base(build_fn);
+  }
+
+  #[test]
+  fn compact_heightfield_builds_layer_regions() {
+    fn build_fn(
+      compact_heightfield: CompactHeightfield,
+      context: &mut Context,
+    ) -> Result<CompactHeightfieldWithRegions, ()> {
+      compact_heightfield.build_layer_regions(context, 1, 1)
+    }
+
+    compact_heightfield_builds_regions_base(build_fn);
+  }
+
+  #[test]
+  fn compact_heightfield_builds_monotone_regions() {
+    fn build_fn(
+      compact_heightfield: CompactHeightfield,
+      context: &mut Context,
+    ) -> Result<CompactHeightfieldWithRegions, ()> {
+      compact_heightfield.build_regions_monotone(context, 1, 1, 1)
+    }
+
+    compact_heightfield_builds_regions_base(build_fn);
   }
 }
