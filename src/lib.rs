@@ -124,7 +124,7 @@ impl Heightfield {
   // TODO: Add support for indexed triangles.
 
   pub fn create_compact_heightfield(
-    mut self,
+    &self,
     context: &mut Context,
     walkable_height: i32,
     walkable_climb: i32,
@@ -139,7 +139,11 @@ impl Heightfield {
         context.context.deref_mut(),
         walkable_height,
         walkable_climb,
-        self.heightfield.deref_mut(),
+        // TODO: Remove this gnarly cast once the heightfield is passed by
+        // const ref.
+        // https://github.com/recastnavigation/recastnavigation/pull/625
+        self.heightfield.deref() as *const recastnavigation_sys::rcHeightfield
+          as *mut recastnavigation_sys::rcHeightfield,
         compact_heightfield.deref_mut(),
       )
     };
@@ -323,7 +327,7 @@ pub struct CompactHeightfieldWithRegions {
 
 impl CompactHeightfieldWithRegions {
   pub fn build_contours(
-    self,
+    &self,
     context: &mut Context,
     max_error: f32,
     max_edge_len: i32,
@@ -480,7 +484,7 @@ impl ContourSet {
     let build_succeeded = unsafe {
       rcBuildPolyMesh(
         context.context.deref_mut(),
-        // TODO: Remove this gnarly cast once the compact_heightfield is passed
+        // TODO: Remove this gnarly cast once the contour set is passed
         // by const ref.
         // https://github.com/recastnavigation/recastnavigation/pull/625
         self.contour_set.deref() as *const recastnavigation_sys::rcContourSet
