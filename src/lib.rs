@@ -12,6 +12,7 @@ mod wrappers;
 pub use recastnavigation_sys::{
   RC_NULL_AREA as INVALID_AREA_ID, RC_WALKABLE_AREA as WALKABLE_AREA_ID,
 };
+use vector::IVec3;
 pub use vector::Vec3;
 
 pub struct Context {
@@ -191,7 +192,7 @@ impl CompactHeightfield {
       rcBuildHeightfieldLayers(
         context.context.deref_mut(),
         // TODO: Remove this gnarly cast once the compact_heightfield is passed
-        // by const ref.
+        // by const ref. https://github.com/recastnavigation/recastnavigation/pull/625
         self.compact_heightfield.deref()
           as *const recastnavigation_sys::rcCompactHeightfield
           as *mut recastnavigation_sys::rcCompactHeightfield,
@@ -322,11 +323,106 @@ pub struct HeightfieldLayerSet {
   layer_set: wrappers::RawHeightfieldLayerSet,
 }
 
+impl HeightfieldLayerSet {
+  pub fn len(&self) -> usize {
+    self.layer_set.nlayers as usize
+  }
+
+  pub fn get_layer(&self, index: usize) -> HeightfieldLayer<'_> {
+    // SAFETY: `layers` is owned by `self` and the lifetime of the slice is
+    // equal to the lifetime of `self`. `layers` has a length of `self.len()` as
+    // per `rcBuildHeightfieldLayers`.
+    let slice =
+      unsafe { std::slice::from_raw_parts(self.layer_set.layers, self.len()) };
+    HeightfieldLayer { layer: &slice[index] }
+  }
+
+  pub fn as_vec(&self) -> Vec<HeightfieldLayer<'_>> {
+    // SAFETY: `layers` is owned by `self` and the lifetime of the slice is
+    // equal to the lifetime of `self`. `layers` has a length of `self.len()` as
+    // per `rcBuildHeightfieldLayers`.
+    let slice =
+      unsafe { std::slice::from_raw_parts(self.layer_set.layers, self.len()) };
+    (0..self.len()).map(|i| HeightfieldLayer { layer: &slice[i] }).collect()
+  }
+}
+
+pub struct HeightfieldLayer<'layer_set> {
+  layer: &'layer_set recastnavigation_sys::rcHeightfieldLayer,
+}
+
+impl<'layer_set> HeightfieldLayer<'layer_set> {
+  pub fn min_bounds(&self) -> Vec3 {
+    Vec3::new(self.layer.bmin[0], self.layer.bmin[1], self.layer.bmin[2])
+  }
+
+  pub fn max_bounds(&self) -> Vec3 {
+    Vec3::new(self.layer.bmax[0], self.layer.bmax[1], self.layer.bmax[2])
+  }
+
+  pub fn cell_horizontal_size(&self) -> f32 {
+    self.layer.cs
+  }
+
+  pub fn cell_height(&self) -> f32 {
+    self.layer.ch
+  }
+
+  pub fn grid_width(&self) -> i32 {
+    self.layer.width
+  }
+
+  pub fn grid_height(&self) -> i32 {
+    self.layer.height
+  }
+
+  pub fn grid_min_bounds(&self) -> IVec3 {
+    IVec3::new(self.layer.minx, self.layer.hmin, self.layer.miny)
+  }
+
+  pub fn grid_max_bounds(&self) -> IVec3 {
+    IVec3::new(self.layer.maxx, self.layer.hmax, self.layer.maxy)
+  }
+
+  pub fn heights(&self) -> &[u8] {
+    // SAFETY: `layer` is valid and therefore `layer.heights` holds width *
+    // height entries.
+    unsafe {
+      std::slice::from_raw_parts(
+        self.layer.heights,
+        (self.layer.width * self.layer.height) as usize,
+      )
+    }
+  }
+
+  pub fn areas(&self) -> &[u8] {
+    // SAFETY: `layer` is valid and therefore `layer.areas` holds width * height
+    // entries.
+    unsafe {
+      std::slice::from_raw_parts(
+        self.layer.areas,
+        (self.layer.width * self.layer.height) as usize,
+      )
+    }
+  }
+
+  pub fn packed_connection_info(&self) -> &[u8] {
+    // SAFETY: `layer` is valid and therefore `layer.cons` holds width * height
+    // entries.
+    unsafe {
+      std::slice::from_raw_parts(
+        self.layer.cons,
+        (self.layer.width * self.layer.height) as usize,
+      )
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use crate::{
-    CompactHeightfield, CompactHeightfieldWithRegions, Context, Heightfield,
-    Vec3, WALKABLE_AREA_ID,
+    vector::IVec3, CompactHeightfield, CompactHeightfieldWithRegions, Context,
+    Heightfield, Vec3, WALKABLE_AREA_ID,
   };
 
   #[test]
@@ -503,8 +599,22 @@ mod tests {
       .erode_walkable_area(&mut context, 1)
       .expect("erosion succeeds");
 
-    compact_heightfield
-      .build_heightfield_layer_set(&mut context, 1, 3)
+    let layer_set = compact_heightfield
+      .build_heightfield_layer_set(&mut context, 0, 3)
       .expect("heightfield layers created");
+
+    let layer_set = layer_set.as_vec();
+    assert_eq!(layer_set.len(), 1);
+
+    let layer = &layer_set[0];
+    assert_eq!(layer.min_bounds(), Vec3::new(0.0, 1.0, 0.0));
+    assert_eq!(layer.max_bounds(), Vec3::new(5.0, 1.0, 5.0));
+    assert_eq!(layer.cell_horizontal_size(), 1.0);
+    assert_eq!(layer.cell_height(), 1.0);
+    assert_eq!(layer.grid_width(), 5);
+    assert_eq!(layer.grid_height(), 5);
+    // TODO: Figure out why this is shrunk by 2 on both sides instead of 1.
+    assert_eq!(layer.grid_min_bounds(), IVec3::new(2, 1, 2));
+    assert_eq!(layer.grid_max_bounds(), IVec3::new(3, 1, 3));
   }
 }
