@@ -2,8 +2,8 @@ use std::ops::{Deref, DerefMut};
 
 use recastnavigation_sys::{
   rcBuildCompactHeightfield, rcBuildContours, rcBuildDistanceField,
-  rcBuildHeightfieldLayers, rcBuildLayerRegions, rcBuildRegions,
-  rcBuildRegionsMonotone, rcCalcGridSize, rcCreateHeightfield,
+  rcBuildHeightfieldLayers, rcBuildLayerRegions, rcBuildPolyMesh,
+  rcBuildRegions, rcBuildRegionsMonotone, rcCalcGridSize, rcCreateHeightfield,
   rcErodeWalkableArea, rcRasterizeTriangles2,
 };
 
@@ -469,6 +469,39 @@ pub struct ContourSet {
   contour_set: wrappers::RawContourSet,
 }
 
+impl ContourSet {
+  pub fn build_poly_mesh(
+    &self,
+    context: &mut Context,
+    max_vertices_per_polygon: i32,
+  ) -> Result<PolyMesh, ()> {
+    let mut poly_mesh = wrappers::RawPolyMesh::new()?;
+
+    let build_succeeded = unsafe {
+      rcBuildPolyMesh(
+        context.context.deref_mut(),
+        // TODO: Remove this gnarly cast once the compact_heightfield is passed
+        // by const ref.
+        // https://github.com/recastnavigation/recastnavigation/pull/625
+        self.contour_set.deref() as *const recastnavigation_sys::rcContourSet
+          as *mut recastnavigation_sys::rcContourSet,
+        max_vertices_per_polygon,
+        poly_mesh.deref_mut(),
+      )
+    };
+
+    if build_succeeded {
+      Ok(PolyMesh { poly_mesh })
+    } else {
+      Err(())
+    }
+  }
+}
+
+pub struct PolyMesh {
+  poly_mesh: wrappers::RawPolyMesh,
+}
+
 #[cfg(test)]
 mod tests {
   use crate::{
@@ -718,5 +751,58 @@ mod tests {
         },
       )
       .expect("contours built");
+  }
+
+  #[test]
+  fn compact_heightfield_builds_poly_mesh() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let mut compact_heightfield = heightfield
+      .create_compact_heightfield(&mut context, 3, 0)
+      .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield
+      .erode_walkable_area(&mut context, 1)
+      .expect("erosion succeeds");
+
+    let compact_heightfield_with_regions = compact_heightfield
+      .build_regions(&mut context, 1, 1, 1)
+      .expect("regions built");
+
+    let contour_set = compact_heightfield_with_regions
+      .build_contours(
+        &mut context,
+        1.0,
+        10,
+        ContourBuildFlags {
+          tessellate_wall_edges: true,
+          tessellate_area_edges: false,
+        },
+      )
+      .expect("contours built");
+
+    contour_set.build_poly_mesh(&mut context, 5).expect("poly mesh built");
   }
 }
