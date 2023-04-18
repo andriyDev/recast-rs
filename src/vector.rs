@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq)]
 pub struct Vec3 {
   pub x: f32,
   pub y: f32,
@@ -10,6 +11,7 @@ impl Vec3 {
   }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct IVec3 {
   pub x: i32,
   pub y: i32,
