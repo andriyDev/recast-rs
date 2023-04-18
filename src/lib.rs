@@ -1,9 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
 use recastnavigation_sys::{
-  rcBuildCompactHeightfield, rcBuildDistanceField, rcBuildHeightfieldLayers,
-  rcBuildLayerRegions, rcBuildRegions, rcBuildRegionsMonotone, rcCalcGridSize,
-  rcCreateHeightfield, rcErodeWalkableArea, rcRasterizeTriangles2,
+  rcBuildCompactHeightfield, rcBuildContours, rcBuildDistanceField,
+  rcBuildHeightfieldLayers, rcBuildLayerRegions, rcBuildRegions,
+  rcBuildRegionsMonotone, rcCalcGridSize, rcCreateHeightfield,
+  rcErodeWalkableArea, rcRasterizeTriangles2,
 };
 
 mod vector;
@@ -192,7 +193,8 @@ impl CompactHeightfield {
       rcBuildHeightfieldLayers(
         context.context.deref_mut(),
         // TODO: Remove this gnarly cast once the compact_heightfield is passed
-        // by const ref. https://github.com/recastnavigation/recastnavigation/pull/625
+        // by const ref.
+        // https://github.com/recastnavigation/recastnavigation/pull/625
         self.compact_heightfield.deref()
           as *const recastnavigation_sys::rcCompactHeightfield
           as *mut recastnavigation_sys::rcCompactHeightfield,
@@ -319,6 +321,43 @@ pub struct CompactHeightfieldWithRegions {
   compact_heightfield: wrappers::RawCompactHeightfield,
 }
 
+impl CompactHeightfieldWithRegions {
+  pub fn build_contours(
+    self,
+    context: &mut Context,
+    max_error: f32,
+    max_edge_len: i32,
+    build_flags: ContourBuildFlags,
+  ) -> Result<ContourSet, ()> {
+    let mut contour_set = wrappers::RawContourSet::new()?;
+
+    let build_flags = (build_flags.tessellate_wall_edges as i32 * 0x01)
+      | (build_flags.tessellate_area_edges as i32 * 0x02);
+
+    let build_succeeded = unsafe {
+      rcBuildContours(
+        context.context.deref_mut(),
+        // TODO: Remove this gnarly cast once the compact_heightfield is passed
+        // by const ref.
+        // https://github.com/recastnavigation/recastnavigation/pull/625
+        self.compact_heightfield.deref()
+          as *const recastnavigation_sys::rcCompactHeightfield
+          as *mut recastnavigation_sys::rcCompactHeightfield,
+        max_error,
+        max_edge_len,
+        contour_set.deref_mut(),
+        build_flags,
+      )
+    };
+
+    if build_succeeded {
+      Ok(ContourSet { contour_set })
+    } else {
+      Err(())
+    }
+  }
+}
+
 pub struct HeightfieldLayerSet {
   layer_set: wrappers::RawHeightfieldLayerSet,
 }
@@ -418,11 +457,23 @@ impl<'layer_set> HeightfieldLayer<'layer_set> {
   }
 }
 
+pub struct ContourBuildFlags {
+  // Tessellate solid (impassable) edges during simplification.
+  // By default, only this flag is set.
+  tessellate_wall_edges: bool,
+  // Tessellate edges between areas during simplification.
+  tessellate_area_edges: bool,
+}
+
+pub struct ContourSet {
+  contour_set: wrappers::RawContourSet,
+}
+
 #[cfg(test)]
 mod tests {
   use crate::{
     vector::IVec3, CompactHeightfield, CompactHeightfieldWithRegions, Context,
-    Heightfield, Vec3, WALKABLE_AREA_ID,
+    ContourBuildFlags, Heightfield, Vec3, WALKABLE_AREA_ID,
   };
 
   #[test]
@@ -616,5 +667,56 @@ mod tests {
     // TODO: Figure out why this is shrunk by 2 on both sides instead of 1.
     assert_eq!(layer.grid_min_bounds(), IVec3::new(2, 1, 2));
     assert_eq!(layer.grid_max_bounds(), IVec3::new(3, 1, 3));
+  }
+
+  #[test]
+  fn compact_heightfield_builds_contour_set() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let mut compact_heightfield = heightfield
+      .create_compact_heightfield(&mut context, 3, 0)
+      .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield
+      .erode_walkable_area(&mut context, 1)
+      .expect("erosion succeeds");
+
+    let compact_heightfield_with_regions = compact_heightfield
+      .build_regions(&mut context, 1, 1, 1)
+      .expect("regions built");
+
+    compact_heightfield_with_regions
+      .build_contours(
+        &mut context,
+        1.0,
+        10,
+        ContourBuildFlags {
+          tessellate_wall_edges: true,
+          tessellate_area_edges: false,
+        },
+      )
+      .expect("contours built");
   }
 }
