@@ -3,8 +3,9 @@ use std::ops::{Deref, DerefMut};
 use recastnavigation_sys::{
   rcBuildCompactHeightfield, rcBuildContours, rcBuildDistanceField,
   rcBuildHeightfieldLayers, rcBuildLayerRegions, rcBuildPolyMesh,
-  rcBuildRegions, rcBuildRegionsMonotone, rcCalcGridSize, rcCreateHeightfield,
-  rcErodeWalkableArea, rcRasterizeTriangles2,
+  rcBuildPolyMeshDetail, rcBuildRegions, rcBuildRegionsMonotone,
+  rcCalcGridSize, rcCreateHeightfield, rcErodeWalkableArea,
+  rcRasterizeTriangles2,
 };
 
 mod vector;
@@ -518,6 +519,39 @@ pub struct PolyMesh {
   poly_mesh: wrappers::RawPolyMesh,
 }
 
+impl PolyMesh {
+  pub fn build_poly_mesh_detail<TypeState: CompactHeightfieldState>(
+    &self,
+    context: &mut Context,
+    compact_heightfield: &CompactHeightfield<TypeState>,
+    sample_distance: f32,
+    sample_max_error: f32,
+  ) -> Result<PolyMeshDetail, ()> {
+    let mut poly_mesh_detail = wrappers::RawPolyMeshDetail::new()?;
+
+    let build_succeeded = unsafe {
+      rcBuildPolyMeshDetail(
+        context.context.deref_mut(),
+        self.poly_mesh.deref(),
+        compact_heightfield.compact_heightfield.deref(),
+        sample_distance,
+        sample_max_error,
+        poly_mesh_detail.deref_mut(),
+      )
+    };
+
+    if build_succeeded {
+      Ok(PolyMeshDetail { poly_mesh_detail })
+    } else {
+      Err(())
+    }
+  }
+}
+
+pub struct PolyMeshDetail {
+  poly_mesh_detail: wrappers::RawPolyMeshDetail,
+}
+
 #[cfg(test)]
 mod tests {
   use crate::{
@@ -770,7 +804,7 @@ mod tests {
   }
 
   #[test]
-  fn compact_heightfield_builds_poly_mesh() {
+  fn compact_heightfield_builds_poly_mesh_and_poly_mesh_detail() {
     let mut context = Context::new();
 
     let min_bounds = Vec3::new(0.0, 0.0, 0.0);
@@ -819,6 +853,15 @@ mod tests {
       )
       .expect("contours built");
 
-    contour_set.build_poly_mesh(&mut context, 5).expect("poly mesh built");
+    let poly_mesh =
+      contour_set.build_poly_mesh(&mut context, 5).expect("poly mesh built");
+    poly_mesh
+      .build_poly_mesh_detail(
+        &mut context,
+        &compact_heightfield_with_regions,
+        1.0,
+        0.1,
+      )
+      .expect("poly mesh detail built");
   }
 }
