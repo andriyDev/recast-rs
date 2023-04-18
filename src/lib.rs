@@ -128,7 +128,7 @@ impl Heightfield {
     context: &mut Context,
     walkable_height: i32,
     walkable_climb: i32,
-  ) -> Result<CompactHeightfield, ()> {
+  ) -> Result<CompactHeightfield<NoRegions>, ()> {
     let mut compact_heightfield = wrappers::RawCompactHeightfield::new()?;
 
     // SAFETY: rcBuildCompactHeightfield only mutates `context.context`,
@@ -149,40 +149,29 @@ impl Heightfield {
     };
 
     if built_compact_heightfield {
-      Ok(CompactHeightfield { compact_heightfield })
+      Ok(CompactHeightfield {
+        compact_heightfield,
+        marker: std::marker::PhantomData,
+      })
     } else {
       Err(())
     }
   }
 }
 
-pub struct CompactHeightfield {
+pub struct CompactHeightfield<TypeState: CompactHeightfieldState> {
   compact_heightfield: wrappers::RawCompactHeightfield,
+  marker: std::marker::PhantomData<TypeState>,
 }
 
-impl CompactHeightfield {
-  pub fn erode_walkable_area(
-    &mut self,
-    context: &mut Context,
-    radius: i32,
-  ) -> Result<(), ()> {
-    // SAFETY: rcErodeWalkableArea only mutates `context.context`, or
-    // `self.compact_heightfield`.
-    let eroded_area = unsafe {
-      rcErodeWalkableArea(
-        context.context.deref_mut(),
-        radius,
-        self.compact_heightfield.deref_mut(),
-      )
-    };
+pub enum NoRegions {}
+pub enum HasRegions {}
 
-    if eroded_area {
-      Ok(())
-    } else {
-      Err(())
-    }
-  }
+pub trait CompactHeightfieldState {}
+impl CompactHeightfieldState for NoRegions {}
+impl CompactHeightfieldState for HasRegions {}
 
+impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
   pub fn build_heightfield_layer_set(
     &self,
     context: &mut Context,
@@ -214,6 +203,30 @@ impl CompactHeightfield {
       Err(())
     }
   }
+}
+
+impl CompactHeightfield<NoRegions> {
+  pub fn erode_walkable_area(
+    &mut self,
+    context: &mut Context,
+    radius: i32,
+  ) -> Result<(), ()> {
+    // SAFETY: rcErodeWalkableArea only mutates `context.context`, or
+    // `self.compact_heightfield`.
+    let eroded_area = unsafe {
+      rcErodeWalkableArea(
+        context.context.deref_mut(),
+        radius,
+        self.compact_heightfield.deref_mut(),
+      )
+    };
+
+    if eroded_area {
+      Ok(())
+    } else {
+      Err(())
+    }
+  }
 
   fn build_distance_field(&mut self, context: &mut Context) -> Result<(), ()> {
     // SAFETY: rcBuildDistanceField only mutates `context.context`, or
@@ -238,7 +251,7 @@ impl CompactHeightfield {
     border_size: i32,
     min_region_area: i32,
     merge_region_area: i32,
-  ) -> Result<CompactHeightfieldWithRegions, ()> {
+  ) -> Result<CompactHeightfield<HasRegions>, ()> {
     self.build_distance_field(context)?;
 
     // SAFETY: rcBuildRegions only mutates `context.context`, or
@@ -254,8 +267,9 @@ impl CompactHeightfield {
     };
 
     if regions_built {
-      Ok(CompactHeightfieldWithRegions {
+      Ok(CompactHeightfield::<HasRegions> {
         compact_heightfield: self.compact_heightfield,
+        marker: std::marker::PhantomData,
       })
     } else {
       Err(())
@@ -267,7 +281,7 @@ impl CompactHeightfield {
     context: &mut Context,
     border_size: i32,
     min_region_area: i32,
-  ) -> Result<CompactHeightfieldWithRegions, ()> {
+  ) -> Result<CompactHeightfield<HasRegions>, ()> {
     self.build_distance_field(context)?;
 
     // SAFETY: rcBuildLayerRegions only mutates `context.context`, or
@@ -282,8 +296,9 @@ impl CompactHeightfield {
     };
 
     if regions_built {
-      Ok(CompactHeightfieldWithRegions {
+      Ok(CompactHeightfield::<HasRegions> {
         compact_heightfield: self.compact_heightfield,
+        marker: std::marker::PhantomData,
       })
     } else {
       Err(())
@@ -296,7 +311,7 @@ impl CompactHeightfield {
     border_size: i32,
     min_region_area: i32,
     merge_region_area: i32,
-  ) -> Result<CompactHeightfieldWithRegions, ()> {
+  ) -> Result<CompactHeightfield<HasRegions>, ()> {
     self.build_distance_field(context)?;
 
     // SAFETY: rcBuildRegionsMonotone only mutates `context.context`, or
@@ -312,8 +327,9 @@ impl CompactHeightfield {
     };
 
     if regions_built {
-      Ok(CompactHeightfieldWithRegions {
+      Ok(CompactHeightfield::<HasRegions> {
         compact_heightfield: self.compact_heightfield,
+        marker: std::marker::PhantomData,
       })
     } else {
       Err(())
@@ -321,11 +337,7 @@ impl CompactHeightfield {
   }
 }
 
-pub struct CompactHeightfieldWithRegions {
-  compact_heightfield: wrappers::RawCompactHeightfield,
-}
-
-impl CompactHeightfieldWithRegions {
+impl CompactHeightfield<HasRegions> {
   pub fn build_contours(
     &self,
     context: &mut Context,
@@ -509,8 +521,8 @@ pub struct PolyMesh {
 #[cfg(test)]
 mod tests {
   use crate::{
-    vector::IVec3, CompactHeightfield, CompactHeightfieldWithRegions, Context,
-    ContourBuildFlags, Heightfield, Vec3, WALKABLE_AREA_ID,
+    vector::IVec3, CompactHeightfield, Context, ContourBuildFlags, HasRegions,
+    Heightfield, NoRegions, Vec3, WALKABLE_AREA_ID,
   };
 
   #[test]
@@ -577,9 +589,9 @@ mod tests {
 
   fn compact_heightfield_builds_regions_base(
     build_fn: fn(
-      compact_heightfield: CompactHeightfield,
+      compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
-    ) -> Result<CompactHeightfieldWithRegions, ()>,
+    ) -> Result<CompactHeightfield<HasRegions>, ()>,
   ) {
     let mut context = Context::new();
 
@@ -620,9 +632,9 @@ mod tests {
   #[test]
   fn compact_heightfield_builds_regions() {
     fn build_fn(
-      compact_heightfield: CompactHeightfield,
+      compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
-    ) -> Result<CompactHeightfieldWithRegions, ()> {
+    ) -> Result<CompactHeightfield<HasRegions>, ()> {
       compact_heightfield.build_regions(context, 1, 1, 1)
     }
 
@@ -632,9 +644,9 @@ mod tests {
   #[test]
   fn compact_heightfield_builds_layer_regions() {
     fn build_fn(
-      compact_heightfield: CompactHeightfield,
+      compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
-    ) -> Result<CompactHeightfieldWithRegions, ()> {
+    ) -> Result<CompactHeightfield<HasRegions>, ()> {
       compact_heightfield.build_layer_regions(context, 1, 1)
     }
 
@@ -644,9 +656,9 @@ mod tests {
   #[test]
   fn compact_heightfield_builds_monotone_regions() {
     fn build_fn(
-      compact_heightfield: CompactHeightfield,
+      compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
-    ) -> Result<CompactHeightfieldWithRegions, ()> {
+    ) -> Result<CompactHeightfield<HasRegions>, ()> {
       compact_heightfield.build_regions_monotone(context, 1, 1, 1)
     }
 
