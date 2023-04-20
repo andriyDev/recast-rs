@@ -1,25 +1,12 @@
-#[derive(Debug, PartialEq)]
-pub struct Vec3 {
-  pub x: f32,
-  pub y: f32,
-  pub z: f32,
-}
-
-impl Vec3 {
-  pub fn new(x: f32, y: f32, z: f32) -> Self {
-    Self { x, y, z }
-  }
-}
-
 #[derive(Debug, PartialEq, Eq)]
-pub struct IVec3 {
-  pub x: i32,
-  pub y: i32,
-  pub z: i32,
+pub struct Vec3<T> {
+  pub x: T,
+  pub y: T,
+  pub z: T,
 }
 
-impl IVec3 {
-  pub fn new(x: i32, y: i32, z: i32) -> Self {
+impl<T> Vec3<T> {
+  pub fn new(x: T, y: T, z: T) -> Self {
     Self { x, y, z }
   }
 }

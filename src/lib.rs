@@ -14,7 +14,6 @@ mod wrappers;
 pub use recastnavigation_sys::{
   RC_NULL_AREA as INVALID_AREA_ID, RC_WALKABLE_AREA as WALKABLE_AREA_ID,
 };
-use vector::IVec3;
 pub use vector::Vec3;
 
 pub struct Context {
@@ -34,8 +33,8 @@ pub struct Heightfield {
 impl Heightfield {
   pub fn new(
     context: &mut Context,
-    min_bounds: Vec3,
-    max_bounds: Vec3,
+    min_bounds: Vec3<f32>,
+    max_bounds: Vec3<f32>,
     cell_horizontal_size: f32,
     cell_height: f32,
   ) -> Result<Self, ()> {
@@ -81,7 +80,7 @@ impl Heightfield {
   pub fn rasterize_triangles(
     &mut self,
     context: &mut Context,
-    vertices: &[Vec3],
+    vertices: &[Vec3<f32>],
     area_ids: &[u8],
     flag_merge_threshold: i32,
   ) -> Result<(), ()> {
@@ -408,11 +407,11 @@ pub struct HeightfieldLayer<'layer_set> {
 }
 
 impl<'layer_set> HeightfieldLayer<'layer_set> {
-  pub fn min_bounds(&self) -> Vec3 {
+  pub fn min_bounds(&self) -> Vec3<f32> {
     Vec3::new(self.layer.bmin[0], self.layer.bmin[1], self.layer.bmin[2])
   }
 
-  pub fn max_bounds(&self) -> Vec3 {
+  pub fn max_bounds(&self) -> Vec3<f32> {
     Vec3::new(self.layer.bmax[0], self.layer.bmax[1], self.layer.bmax[2])
   }
 
@@ -432,12 +431,12 @@ impl<'layer_set> HeightfieldLayer<'layer_set> {
     self.layer.height
   }
 
-  pub fn grid_min_bounds(&self) -> IVec3 {
-    IVec3::new(self.layer.minx, self.layer.hmin, self.layer.miny)
+  pub fn grid_min_bounds(&self) -> Vec3<i32> {
+    Vec3::new(self.layer.minx, self.layer.hmin, self.layer.miny)
   }
 
-  pub fn grid_max_bounds(&self) -> IVec3 {
-    IVec3::new(self.layer.maxx, self.layer.hmax, self.layer.maxy)
+  pub fn grid_max_bounds(&self) -> Vec3<i32> {
+    Vec3::new(self.layer.maxx, self.layer.hmax, self.layer.maxy)
   }
 
   pub fn heights(&self) -> &[u8] {
@@ -555,8 +554,8 @@ pub struct PolyMeshDetail {
 #[cfg(test)]
 mod tests {
   use crate::{
-    vector::IVec3, CompactHeightfield, Context, ContourBuildFlags, HasRegions,
-    Heightfield, NoRegions, Vec3, WALKABLE_AREA_ID,
+    CompactHeightfield, Context, ContourBuildFlags, HasRegions, Heightfield,
+    NoRegions, Vec3, WALKABLE_AREA_ID,
   };
 
   #[test]
@@ -748,8 +747,8 @@ mod tests {
     assert_eq!(layer.grid_width(), 5);
     assert_eq!(layer.grid_height(), 5);
     // TODO: Figure out why this is shrunk by 2 on both sides instead of 1.
-    assert_eq!(layer.grid_min_bounds(), IVec3::new(2, 1, 2));
-    assert_eq!(layer.grid_max_bounds(), IVec3::new(3, 1, 3));
+    assert_eq!(layer.grid_min_bounds(), Vec3::<i32>::new(2, 1, 2));
+    assert_eq!(layer.grid_max_bounds(), Vec3::<i32>::new(3, 1, 3));
   }
 
   #[test]
