@@ -77,6 +77,38 @@ impl Heightfield {
     }
   }
 
+  pub fn grid_width(&self) -> i32 {
+    self.heightfield.width
+  }
+
+  pub fn grid_height(&self) -> i32 {
+    self.heightfield.height
+  }
+
+  pub fn min_bounds(&self) -> Vec3<f32> {
+    Vec3::new(
+      self.heightfield.bmin[0],
+      self.heightfield.bmin[1],
+      self.heightfield.bmin[2],
+    )
+  }
+
+  pub fn max_bounds(&self) -> Vec3<f32> {
+    Vec3::new(
+      self.heightfield.bmax[0],
+      self.heightfield.bmax[1],
+      self.heightfield.bmax[2],
+    )
+  }
+
+  pub fn cell_horizontal_size(&self) -> f32 {
+    self.heightfield.cs
+  }
+
+  pub fn cell_height(&self) -> f32 {
+    self.heightfield.ch
+  }
+
   pub fn rasterize_triangles(
     &mut self,
     context: &mut Context,
@@ -559,7 +591,7 @@ mod tests {
     let max_bounds = Vec3::new(5.0, 5.0, 5.0);
 
     let mut heightfield =
-      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+      Heightfield::new(&mut context, min_bounds, max_bounds, 0.5, 0.5)
         .expect("creation succeeds");
 
     let vertices = [
@@ -576,6 +608,13 @@ mod tests {
     heightfield
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
+
+    assert_eq!(heightfield.grid_width(), 10);
+    assert_eq!(heightfield.grid_height(), 10);
+    assert_eq!(heightfield.min_bounds(), min_bounds);
+    assert_eq!(heightfield.max_bounds(), max_bounds);
+    assert_eq!(heightfield.cell_horizontal_size(), 0.5);
+    assert_eq!(heightfield.cell_height(), 0.5);
   }
 
   #[test]
