@@ -139,11 +139,7 @@ impl Heightfield {
         context.context.deref_mut(),
         walkable_height,
         walkable_climb,
-        // TODO: Remove this gnarly cast once the heightfield is passed by
-        // const ref.
-        // https://github.com/recastnavigation/recastnavigation/pull/625
-        self.heightfield.deref() as *const recastnavigation_sys::rcHeightfield
-          as *mut recastnavigation_sys::rcHeightfield,
+        self.heightfield.deref(),
         compact_heightfield.deref_mut(),
       )
     };
@@ -185,12 +181,7 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
     let build_succeeded = unsafe {
       rcBuildHeightfieldLayers(
         context.context.deref_mut(),
-        // TODO: Remove this gnarly cast once the compact_heightfield is passed
-        // by const ref.
-        // https://github.com/recastnavigation/recastnavigation/pull/625
-        self.compact_heightfield.deref()
-          as *const recastnavigation_sys::rcCompactHeightfield
-          as *mut recastnavigation_sys::rcCompactHeightfield,
+        self.compact_heightfield.deref(),
         border_size,
         walkable_height,
         layer_set.deref_mut(),
@@ -353,12 +344,7 @@ impl CompactHeightfield<HasRegions> {
     let build_succeeded = unsafe {
       rcBuildContours(
         context.context.deref_mut(),
-        // TODO: Remove this gnarly cast once the compact_heightfield is passed
-        // by const ref.
-        // https://github.com/recastnavigation/recastnavigation/pull/625
-        self.compact_heightfield.deref()
-          as *const recastnavigation_sys::rcCompactHeightfield
-          as *mut recastnavigation_sys::rcCompactHeightfield,
+        self.compact_heightfield.deref(),
         max_error,
         max_edge_len,
         contour_set.deref_mut(),
@@ -496,11 +482,7 @@ impl ContourSet {
     let build_succeeded = unsafe {
       rcBuildPolyMesh(
         context.context.deref_mut(),
-        // TODO: Remove this gnarly cast once the contour set is passed
-        // by const ref.
-        // https://github.com/recastnavigation/recastnavigation/pull/625
-        self.contour_set.deref() as *const recastnavigation_sys::rcContourSet
-          as *mut recastnavigation_sys::rcContourSet,
+        self.contour_set.deref(),
         max_vertices_per_polygon,
         poly_mesh.deref_mut(),
       )
