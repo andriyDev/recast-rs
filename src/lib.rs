@@ -552,7 +552,7 @@ mod tests {
   };
 
   #[test]
-  fn heightfield_rasterizes_triangles() {
+  fn rasterize_triangles() {
     let mut context = Context::new();
 
     let min_bounds = Vec3::new(0.0, 0.0, 0.0);
@@ -579,7 +579,7 @@ mod tests {
   }
 
   #[test]
-  fn compact_heightfield_erodes_area() {
+  fn erode_area() {
     let mut context = Context::new();
 
     let min_bounds = Vec3::new(0.0, 0.0, 0.0);
@@ -613,7 +613,7 @@ mod tests {
       .expect("erosion succeeds");
   }
 
-  fn compact_heightfield_builds_regions_base(
+  fn build_regions_base(
     build_fn: fn(
       compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
@@ -656,7 +656,7 @@ mod tests {
   }
 
   #[test]
-  fn compact_heightfield_builds_regions() {
+  fn build_regions() {
     fn build_fn(
       compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
@@ -664,11 +664,11 @@ mod tests {
       compact_heightfield.build_regions(context, 1, 1, 1)
     }
 
-    compact_heightfield_builds_regions_base(build_fn);
+    build_regions_base(build_fn);
   }
 
   #[test]
-  fn compact_heightfield_builds_layer_regions() {
+  fn build_layer_regions() {
     fn build_fn(
       compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
@@ -676,11 +676,11 @@ mod tests {
       compact_heightfield.build_layer_regions(context, 1, 1)
     }
 
-    compact_heightfield_builds_regions_base(build_fn);
+    build_regions_base(build_fn);
   }
 
   #[test]
-  fn compact_heightfield_builds_monotone_regions() {
+  fn build_monotone_regions() {
     fn build_fn(
       compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
@@ -688,11 +688,11 @@ mod tests {
       compact_heightfield.build_regions_monotone(context, 1, 1, 1)
     }
 
-    compact_heightfield_builds_regions_base(build_fn);
+    build_regions_base(build_fn);
   }
 
   #[test]
-  fn compact_heightfield_builds_heightfield_layers() {
+  fn build_heightfield_layers() {
     let mut context = Context::new();
 
     let min_bounds = Vec3::new(0.0, 0.0, 0.0);
@@ -745,7 +745,7 @@ mod tests {
   }
 
   #[test]
-  fn compact_heightfield_builds_contour_set() {
+  fn build_contour_set() {
     let mut context = Context::new();
 
     let min_bounds = Vec3::new(0.0, 0.0, 0.0);
@@ -796,7 +796,7 @@ mod tests {
   }
 
   #[test]
-  fn compact_heightfield_builds_poly_mesh_and_poly_mesh_detail() {
+  fn build_poly_mesh_and_poly_mesh_detail() {
     let mut context = Context::new();
 
     let min_bounds = Vec3::new(0.0, 0.0, 0.0);
