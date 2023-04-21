@@ -341,6 +341,10 @@ impl CompactHeightfield<HasRegions> {
     let build_flags = (build_flags.tessellate_wall_edges as i32 * 0x01)
       | (build_flags.tessellate_area_edges as i32 * 0x02);
 
+    // SAFETY: rcBuildContours only modifies `context.context` and
+    // `contour_set`, both of which are taken by mutable borrows.
+    // `self.compact_heightfield` is only read and is passed by immutable
+    // borrow.
     let build_succeeded = unsafe {
       rcBuildContours(
         context.context.deref_mut(),
@@ -479,6 +483,9 @@ impl ContourSet {
   ) -> Result<PolyMesh, ()> {
     let mut poly_mesh = wrappers::RawPolyMesh::new()?;
 
+    // SAFETY: rcBuildPolyMesh only modifies `context.context` and `poly_mesh`,
+    // both of which are taken by mutable borrows. `self.contour_set` is only
+    // read and is passed by immutable borrow.
     let build_succeeded = unsafe {
       rcBuildPolyMesh(
         context.context.deref_mut(),
@@ -510,6 +517,10 @@ impl PolyMesh {
   ) -> Result<PolyMeshDetail, ()> {
     let mut poly_mesh_detail = wrappers::RawPolyMeshDetail::new()?;
 
+    // SAFETY: rcBuildPolyMeshDetail only modifies `context.context` and
+    // `poly_mesh_detail`, both of which are taken by mutable borrows.
+    // `self.poly_mesh` and `compact_heightfield.compact_heightfield` are only
+    // read and are passed by immutable borrows.
     let build_succeeded = unsafe {
       rcBuildPolyMeshDetail(
         context.context.deref_mut(),
