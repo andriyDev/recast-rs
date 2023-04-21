@@ -643,13 +643,9 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let mut compact_heightfield = heightfield
+    let compact_heightfield = heightfield
       .create_compact_heightfield(&mut context, 3, 0)
       .expect("creating CompactHeightfield succeeds");
-
-    compact_heightfield
-      .erode_walkable_area(&mut context, 1)
-      .expect("erosion succeeds");
 
     build_fn(compact_heightfield, &mut context)
       .expect("building regions succeeds");
@@ -770,16 +766,12 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let mut compact_heightfield = heightfield
+    let compact_heightfield = heightfield
       .create_compact_heightfield(&mut context, 3, 0)
       .expect("creating CompactHeightfield succeeds");
 
-    compact_heightfield
-      .erode_walkable_area(&mut context, 1)
-      .expect("erosion succeeds");
-
     let compact_heightfield_with_regions = compact_heightfield
-      .build_regions(&mut context, 1, 1, 1)
+      .build_regions(&mut context, 0, 1, 1)
       .expect("regions built");
 
     compact_heightfield_with_regions
@@ -821,16 +813,12 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let mut compact_heightfield = heightfield
+    let compact_heightfield = heightfield
       .create_compact_heightfield(&mut context, 3, 0)
       .expect("creating CompactHeightfield succeeds");
 
-    compact_heightfield
-      .erode_walkable_area(&mut context, 1)
-      .expect("erosion succeeds");
-
     let compact_heightfield_with_regions = compact_heightfield
-      .build_regions(&mut context, 1, 1, 1)
+      .build_regions(&mut context, 0, 1, 1)
       .expect("regions built");
 
     let contour_set = compact_heightfield_with_regions
