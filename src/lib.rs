@@ -200,37 +200,6 @@ impl Heightfield {
   }
 
   // TODO: Add support for indexed triangles.
-
-  pub fn create_compact_heightfield(
-    &self,
-    context: &mut Context,
-    walkable_height: i32,
-    walkable_climb: i32,
-  ) -> Result<CompactHeightfield<NoRegions>, ()> {
-    let mut compact_heightfield = wrappers::RawCompactHeightfield::new()?;
-
-    // SAFETY: rcBuildCompactHeightfield only mutates `context.context`,
-    // `heightfield.heightfield`, and `compact_heightfield` which are mutably
-    // borrowed.
-    let built_compact_heightfield = unsafe {
-      rcBuildCompactHeightfield(
-        context.context.deref_mut(),
-        walkable_height,
-        walkable_climb,
-        self.heightfield.deref(),
-        compact_heightfield.deref_mut(),
-      )
-    };
-
-    if built_compact_heightfield {
-      Ok(CompactHeightfield {
-        compact_heightfield,
-        marker: std::marker::PhantomData,
-      })
-    } else {
-      Err(())
-    }
-  }
 }
 
 #[derive(Clone, Copy)]
@@ -332,6 +301,33 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
 }
 
 impl CompactHeightfield<NoRegions> {
+  pub fn create_from_heightfield(
+    heightfield: &Heightfield,
+    context: &mut Context,
+    walkable_height: i32,
+    walkable_climb: i32,
+  ) -> Result<Self, ()> {
+    let mut compact_heightfield = wrappers::RawCompactHeightfield::new()?;
+
+    // SAFETY: rcBuildCompactHeightfield only mutates `context.context`,
+    // `compact_heightfield`, which are mutably borrowed.
+    let built_compact_heightfield = unsafe {
+      rcBuildCompactHeightfield(
+        context.context.deref_mut(),
+        walkable_height,
+        walkable_climb,
+        heightfield.heightfield.deref(),
+        compact_heightfield.deref_mut(),
+      )
+    };
+
+    if built_compact_heightfield {
+      Ok(Self { compact_heightfield, marker: std::marker::PhantomData })
+    } else {
+      Err(())
+    }
+  }
+
   pub fn erode_walkable_area(
     &mut self,
     context: &mut Context,
@@ -781,8 +777,13 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let mut compact_heightfield = heightfield
-      .create_compact_heightfield(&mut context, 3, 0)
+    let mut compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        3,
+        0,
+      )
       .expect("creating CompactHeightfield succeeds");
 
     compact_heightfield
@@ -820,8 +821,13 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let compact_heightfield = heightfield
-      .create_compact_heightfield(&mut context, 3, 0)
+    let compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        3,
+        0,
+      )
       .expect("creating CompactHeightfield succeeds");
 
     build_fn(compact_heightfield, &mut context)
@@ -890,8 +896,13 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let mut compact_heightfield = heightfield
-      .create_compact_heightfield(&mut context, 3, 0)
+    let mut compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        3,
+        0,
+      )
       .expect("creating CompactHeightfield succeeds");
 
     compact_heightfield
@@ -943,8 +954,13 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let compact_heightfield = heightfield
-      .create_compact_heightfield(&mut context, 3, 0)
+    let compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        3,
+        0,
+      )
       .expect("creating CompactHeightfield succeeds");
 
     let compact_heightfield_with_regions = compact_heightfield
@@ -990,8 +1006,13 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let compact_heightfield = heightfield
-      .create_compact_heightfield(&mut context, 3, 0)
+    let compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        3,
+        0,
+      )
       .expect("creating CompactHeightfield succeeds");
 
     let compact_heightfield_with_regions = compact_heightfield
