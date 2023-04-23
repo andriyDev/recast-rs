@@ -132,3 +132,73 @@ impl<'layer_set> HeightfieldLayer<'layer_set> {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use crate::{
+    CompactHeightfield, Context, Heightfield, HeightfieldLayerSet, NoRegions,
+    Vec3, WALKABLE_AREA_ID,
+  };
+
+  #[test]
+  fn build_heightfield_layers() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let mut compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        3,
+        0,
+      )
+      .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield
+      .erode_walkable_area(&mut context, 1)
+      .expect("erosion succeeds");
+
+    let layer_set = HeightfieldLayerSet::new(
+      &compact_heightfield,
+      &mut context,
+      /* border_size= */ 0,
+      /* walkable_height= */ 3,
+    )
+    .expect("heightfield layers created");
+
+    let layer_set = layer_set.as_vec();
+    assert_eq!(layer_set.len(), 1);
+
+    let layer = &layer_set[0];
+    assert_eq!(layer.min_bounds(), Vec3::new(0.0, 1.0, 0.0));
+    assert_eq!(layer.max_bounds(), Vec3::new(5.0, 1.0, 5.0));
+    assert_eq!(layer.cell_horizontal_size(), 1.0);
+    assert_eq!(layer.cell_height(), 1.0);
+    assert_eq!(layer.grid_width(), 5);
+    assert_eq!(layer.grid_height(), 5);
+    assert_eq!(layer.grid_min_bounds(), Vec3::<i32>::new(1, 1, 1));
+    // TODO: Figure out why this is shrunk by 2 on this side instead of 1.
+    assert_eq!(layer.grid_max_bounds(), Vec3::<i32>::new(3, 1, 3));
+  }
+}

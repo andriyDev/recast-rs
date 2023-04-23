@@ -74,3 +74,74 @@ impl PolyMeshDetail {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use crate::{
+    CompactHeightfield, Context, ContourBuildFlags, ContourSet, Heightfield,
+    NoRegions, PolyMesh, PolyMeshDetail, Vec3, WALKABLE_AREA_ID,
+  };
+
+  #[test]
+  fn build_poly_mesh_and_poly_mesh_detail() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        3,
+        0,
+      )
+      .expect("creating CompactHeightfield succeeds");
+
+    let compact_heightfield_with_regions = compact_heightfield
+      .build_regions(&mut context, 0, 1, 1)
+      .expect("regions built");
+
+    let contour_set = ContourSet::new(
+      &compact_heightfield_with_regions,
+      &mut context,
+      /* max_error= */ 1.0,
+      /* max_edge_len= */ 10,
+      ContourBuildFlags {
+        tessellate_wall_edges: true,
+        tessellate_area_edges: false,
+      },
+    )
+    .expect("contours built");
+
+    let poly_mesh =
+      PolyMesh::new(&contour_set, &mut context, 5).expect("poly mesh built");
+    PolyMeshDetail::new(
+      &poly_mesh,
+      &mut context,
+      &compact_heightfield_with_regions,
+      /* sample_distance= */ 1.0,
+      /* sample_max_error= */ 0.1,
+    )
+    .expect("poly mesh detail built");
+  }
+}

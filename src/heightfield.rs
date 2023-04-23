@@ -238,3 +238,77 @@ impl<'hf> std::fmt::Debug for HeightfieldSpan<'hf> {
       .finish()
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use crate::{Context, Heightfield, HeightfieldSpan, Vec3, WALKABLE_AREA_ID};
+
+  macro_rules! assert_span_column_eq {
+      ($span_column: expr, $expected_column: expr) => {{
+        let span_column = $span_column;
+        let expected_column = $expected_column;
+
+        assert_eq!(span_column.len(), expected_column.len(), "\n\nactual_spans={:?}\nexpected_spans={:?}", span_column, expected_column);
+
+        for (index, (actual_span, expected_span)) in span_column.iter().zip(expected_column.iter()).enumerate() {
+          assert_eq!(
+            (actual_span.height_min_u32(), actual_span.height_max_u32(), actual_span.area_id()),
+            *expected_span,
+            "\n\nColumn differs at index {}\n\nactual_span={:?}\nexpected_span=HeightfieldSpan {{ smin: {}, smax: {}, area: {} }}",
+            index, actual_span, expected_span.0, expected_span.1, expected_span.2
+          );
+        }
+      }};
+  }
+
+  #[test]
+  fn rasterize_triangles() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 0.5, 0.5)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.25, 0.0),
+      Vec3::new(5.0, 0.25, 0.0),
+      Vec3::new(5.0, 0.25, 5.0),
+      Vec3::new(5.0, 0.25, 5.0),
+      Vec3::new(0.0, 0.25, 5.0),
+      Vec3::new(0.0, 0.25, 0.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    assert_eq!(heightfield.grid_width(), 10);
+    assert_eq!(heightfield.grid_height(), 10);
+    assert_eq!(heightfield.min_bounds(), min_bounds);
+    assert_eq!(heightfield.max_bounds(), max_bounds);
+    assert_eq!(heightfield.cell_horizontal_size(), 0.5);
+    assert_eq!(heightfield.cell_height(), 0.5);
+
+    let columns = heightfield
+      .spans_iter()
+      .map(|column_head| HeightfieldSpan::collect(column_head))
+      .collect::<Vec<Vec<HeightfieldSpan>>>();
+    assert_eq!(columns.len(), 100);
+
+    let index_at = |x, y| x + y * heightfield.grid_width() as usize;
+
+    for x in 0..heightfield.grid_width() as usize {
+      for y in 0..heightfield.grid_height() as usize {
+        assert_span_column_eq!(
+          &columns[index_at(x, y)],
+          [(0, 1, WALKABLE_AREA_ID as u32)]
+        );
+      }
+    }
+  }
+}
