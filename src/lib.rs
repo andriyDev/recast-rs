@@ -202,42 +202,6 @@ impl CompactHeightfield<NoRegions> {
   }
 }
 
-impl CompactHeightfield<HasRegions> {
-  pub fn build_contours(
-    &self,
-    context: &mut Context,
-    max_error: f32,
-    max_edge_len: i32,
-    build_flags: ContourBuildFlags,
-  ) -> Result<ContourSet, ()> {
-    let mut contour_set = wrappers::RawContourSet::new()?;
-
-    let build_flags = (build_flags.tessellate_wall_edges as i32 * 0x01)
-      | (build_flags.tessellate_area_edges as i32 * 0x02);
-
-    // SAFETY: rcBuildContours only modifies `context.context` and
-    // `contour_set`, both of which are taken by mutable borrows.
-    // `self.compact_heightfield` is only read and is passed by immutable
-    // borrow.
-    let build_succeeded = unsafe {
-      rcBuildContours(
-        context.context.deref_mut(),
-        self.compact_heightfield.deref(),
-        max_error,
-        max_edge_len,
-        contour_set.deref_mut(),
-        build_flags,
-      )
-    };
-
-    if build_succeeded {
-      Ok(ContourSet { contour_set })
-    } else {
-      Err(())
-    }
-  }
-}
-
 pub struct HeightfieldLayerSet {
   layer_set: wrappers::RawHeightfieldLayerSet,
 }
@@ -378,6 +342,40 @@ pub struct ContourSet {
 }
 
 impl ContourSet {
+  pub fn new(
+    compact_heightfield: &CompactHeightfield<HasRegions>,
+    context: &mut Context,
+    max_error: f32,
+    max_edge_len: i32,
+    build_flags: ContourBuildFlags,
+  ) -> Result<ContourSet, ()> {
+    let mut contour_set = wrappers::RawContourSet::new()?;
+
+    let build_flags = (build_flags.tessellate_wall_edges as i32 * 0x01)
+      | (build_flags.tessellate_area_edges as i32 * 0x02);
+
+    // SAFETY: rcBuildContours only modifies `context.context` and
+    // `contour_set`, both of which are taken by mutable borrows.
+    // `compact_heightfield.compact_heightfield` is only read and is passed by
+    // immutable borrow.
+    let build_succeeded = unsafe {
+      rcBuildContours(
+        context.context.deref_mut(),
+        compact_heightfield.compact_heightfield.deref(),
+        max_error,
+        max_edge_len,
+        contour_set.deref_mut(),
+        build_flags,
+      )
+    };
+
+    if build_succeeded {
+      Ok(ContourSet { contour_set })
+    } else {
+      Err(())
+    }
+  }
+
   pub fn build_poly_mesh(
     &self,
     context: &mut Context,
@@ -449,8 +447,9 @@ pub struct PolyMeshDetail {
 #[cfg(test)]
 mod tests {
   use crate::{
-    CompactHeightfield, Context, ContourBuildFlags, HasRegions, Heightfield,
-    HeightfieldLayerSet, HeightfieldSpan, NoRegions, Vec3, WALKABLE_AREA_ID,
+    CompactHeightfield, Context, ContourBuildFlags, ContourSet, HasRegions,
+    Heightfield, HeightfieldLayerSet, HeightfieldSpan, NoRegions, Vec3,
+    WALKABLE_AREA_ID,
   };
 
   macro_rules! assert_span_column_eq {
@@ -742,17 +741,17 @@ mod tests {
       .build_regions(&mut context, 0, 1, 1)
       .expect("regions built");
 
-    compact_heightfield_with_regions
-      .build_contours(
-        &mut context,
-        1.0,
-        10,
-        ContourBuildFlags {
-          tessellate_wall_edges: true,
-          tessellate_area_edges: false,
-        },
-      )
-      .expect("contours built");
+    ContourSet::new(
+      &compact_heightfield_with_regions,
+      &mut context,
+      /* max_error= */ 1.0,
+      /* max_edge_len= */ 10,
+      ContourBuildFlags {
+        tessellate_wall_edges: true,
+        tessellate_area_edges: false,
+      },
+    )
+    .expect("contours built");
   }
 
   #[test]
@@ -794,17 +793,17 @@ mod tests {
       .build_regions(&mut context, 0, 1, 1)
       .expect("regions built");
 
-    let contour_set = compact_heightfield_with_regions
-      .build_contours(
-        &mut context,
-        1.0,
-        10,
-        ContourBuildFlags {
-          tessellate_wall_edges: true,
-          tessellate_area_edges: false,
-        },
-      )
-      .expect("contours built");
+    let contour_set = ContourSet::new(
+      &compact_heightfield_with_regions,
+      &mut context,
+      /* max_error= */ 1.0,
+      /* max_edge_len= */ 10,
+      ContourBuildFlags {
+        tessellate_wall_edges: true,
+        tessellate_area_edges: false,
+      },
+    )
+    .expect("contours built");
 
     let poly_mesh =
       contour_set.build_poly_mesh(&mut context, 5).expect("poly mesh built");
