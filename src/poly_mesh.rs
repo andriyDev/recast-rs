@@ -4,6 +4,7 @@ use recastnavigation_sys::{rcBuildPolyMesh, rcBuildPolyMeshDetail};
 
 use crate::{
   wrappers, CompactHeightfield, CompactHeightfieldState, Context, ContourSet,
+  Vec3,
 };
 
 pub struct PolyMesh {
@@ -35,6 +36,53 @@ impl PolyMesh {
     } else {
       Err(())
     }
+  }
+
+  fn raw_vertices(&self) -> &[Vec3<u16>] {
+    // SAFETY: `self.poly_mesh.verts` has `self.poly_mesh.nverts` * 3 u16's
+    // which lines up perfectly with `self.poly_mesh.nverts` Vec3<u16>'s. The
+    // lifetime is also correct since `self` owns the verts memory (through
+    // `self.poly_mesh`).
+    unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh.verts as *const Vec3<u16>,
+        self.poly_mesh.nverts as usize,
+      )
+    }
+  }
+
+  pub fn vertices_len(&self) -> usize {
+    self.poly_mesh.nverts as usize
+  }
+
+  pub fn vertex(&self, index: usize) -> PolyMeshVertex {
+    assert!(index < self.vertices_len());
+    PolyMeshVertex { poly_mesh: self, index }
+  }
+
+  pub fn vertices_iter(&self) -> impl Iterator<Item = PolyMeshVertex> + '_ {
+    (0..self.vertices_len())
+      .map(|index| PolyMeshVertex { poly_mesh: self, index })
+  }
+}
+
+pub struct PolyMeshVertex<'poly_mesh> {
+  poly_mesh: &'poly_mesh PolyMesh,
+  index: usize,
+}
+
+impl<'poly_mesh> PolyMeshVertex<'poly_mesh> {
+  pub fn as_u16(&self) -> Vec3<u16> {
+    self.poly_mesh.raw_vertices()[self.index]
+  }
+
+  pub fn as_f32(&self) -> Vec3<f32> {
+    let raw_vector = self.as_u16();
+    Vec3::<f32>::new(
+      raw_vector.x as f32 * self.poly_mesh.poly_mesh.cs,
+      raw_vector.y as f32 * self.poly_mesh.poly_mesh.ch,
+      raw_vector.z as f32 * self.poly_mesh.poly_mesh.cs,
+    )
   }
 }
 
@@ -130,6 +178,37 @@ mod tests {
 
     let poly_mesh =
       PolyMesh::new(&contour_set, &mut context, 5).expect("poly mesh built");
+
+    let raw_vertices = poly_mesh
+      .vertices_iter()
+      .map(|vertex| vertex.as_u16())
+      .collect::<Vec<Vec3<u16>>>();
+
+    assert_eq!(
+      raw_vertices,
+      [
+        Vec3::<u16>::new(0, 1, 0),
+        Vec3::<u16>::new(0, 1, 5),
+        Vec3::<u16>::new(5, 1, 5),
+        Vec3::<u16>::new(5, 1, 0),
+      ]
+    );
+
+    let vertices = poly_mesh
+      .vertices_iter()
+      .map(|vertex| vertex.as_f32())
+      .collect::<Vec<Vec3<f32>>>();
+
+    assert_eq!(
+      vertices,
+      [
+        Vec3::<f32>::new(0.0, 1.0, 0.0),
+        Vec3::<f32>::new(0.0, 1.0, 5.0),
+        Vec3::<f32>::new(5.0, 1.0, 5.0),
+        Vec3::<f32>::new(5.0, 1.0, 0.0),
+      ]
+    );
+
     PolyMeshDetail::new(
       &poly_mesh,
       &mut context,
