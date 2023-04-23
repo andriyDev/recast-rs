@@ -80,6 +80,42 @@ impl PolyMesh {
     (0..self.polygons_len())
       .map(|index| PolyMeshPolygon { poly_mesh: self, index })
   }
+
+  pub fn max_vertices_per_polygon(&self) -> i32 {
+    self.poly_mesh.nvp
+  }
+
+  pub fn min_bounds(&self) -> Vec3<f32> {
+    Vec3::new(
+      self.poly_mesh.bmin[0],
+      self.poly_mesh.bmin[1],
+      self.poly_mesh.bmin[2],
+    )
+  }
+
+  pub fn max_bounds(&self) -> Vec3<f32> {
+    Vec3::new(
+      self.poly_mesh.bmax[0],
+      self.poly_mesh.bmax[1],
+      self.poly_mesh.bmax[2],
+    )
+  }
+
+  pub fn cell_horizontal_size(&self) -> f32 {
+    self.poly_mesh.cs
+  }
+
+  pub fn cell_height(&self) -> f32 {
+    self.poly_mesh.ch
+  }
+
+  pub fn border_size(&self) -> i32 {
+    self.poly_mesh.borderSize
+  }
+
+  pub fn max_edge_error(&self) -> f32 {
+    self.poly_mesh.maxEdgeError
+  }
 }
 
 pub struct PolyMeshVertex<'poly_mesh> {
@@ -275,12 +311,21 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let compact_heightfield =
-      CompactHeightfield::<NoRegions>::new(&heightfield, &mut context, 3, 0)
-        .expect("creating CompactHeightfield succeeds");
+    let compact_heightfield = CompactHeightfield::<NoRegions>::new(
+      &heightfield,
+      &mut context,
+      /* walkable_height= */ 3,
+      /* walkable_climb= */ 0,
+    )
+    .expect("creating CompactHeightfield succeeds");
 
     let compact_heightfield_with_regions = compact_heightfield
-      .build_regions(&mut context, 0, 1, 1)
+      .build_regions(
+        &mut context,
+        /* border_size= */ 0,
+        /* min_region_area= */ 1,
+        /* merge_region_area= */ 1,
+      )
       .expect("regions built");
 
     let contour_set = ContourSet::new(
@@ -295,8 +340,23 @@ mod tests {
     )
     .expect("contours built");
 
-    let poly_mesh =
-      PolyMesh::new(&contour_set, &mut context, 5).expect("poly mesh built");
+    let poly_mesh = PolyMesh::new(
+      &contour_set,
+      &mut context,
+      /* max_vertices_per_polygon= */ 5,
+    )
+    .expect("poly mesh built");
+
+    assert_eq!(poly_mesh.max_vertices_per_polygon(), 5);
+    assert_eq!(poly_mesh.min_bounds(), min_bounds);
+    assert_eq!(
+      poly_mesh.max_bounds(),
+      Vec3::new(max_bounds.x, max_bounds.y + 3.0, max_bounds.z)
+    );
+    assert_eq!(poly_mesh.cell_horizontal_size(), 1.0);
+    assert_eq!(poly_mesh.cell_height(), 1.0);
+    assert_eq!(poly_mesh.border_size(), 0);
+    assert_eq!(poly_mesh.max_edge_error(), 1.0);
 
     let raw_vertices = poly_mesh
       .vertices_iter()
