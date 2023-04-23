@@ -167,13 +167,8 @@ mod tests {
       .expect("rasterization succeeds");
 
     let mut compact_heightfield =
-      CompactHeightfield::<NoRegions>::create_from_heightfield(
-        &heightfield,
-        &mut context,
-        3,
-        0,
-      )
-      .expect("creating CompactHeightfield succeeds");
+      CompactHeightfield::<NoRegions>::new(&heightfield, &mut context, 3, 0)
+        .expect("creating CompactHeightfield succeeds");
 
     compact_heightfield
       .erode_walkable_area(&mut context, 1)

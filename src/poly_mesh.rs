@@ -109,13 +109,8 @@ mod tests {
       .expect("rasterization succeeds");
 
     let compact_heightfield =
-      CompactHeightfield::<NoRegions>::create_from_heightfield(
-        &heightfield,
-        &mut context,
-        3,
-        0,
-      )
-      .expect("creating CompactHeightfield succeeds");
+      CompactHeightfield::<NoRegions>::new(&heightfield, &mut context, 3, 0)
+        .expect("creating CompactHeightfield succeeds");
 
     let compact_heightfield_with_regions = compact_heightfield
       .build_regions(&mut context, 0, 1, 1)

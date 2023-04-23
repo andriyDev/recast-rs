@@ -122,7 +122,7 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
 }
 
 impl CompactHeightfield<NoRegions> {
-  pub fn create_from_heightfield(
+  pub fn new(
     heightfield: &Heightfield,
     context: &mut Context,
     walkable_height: i32,
@@ -470,14 +470,13 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let compact_heightfield =
-      CompactHeightfield::<NoRegions>::create_from_heightfield(
-        &heightfield,
-        &mut context,
-        /* walkable_height= */ 3,
-        /* walkable_climb= */ 0,
-      )
-      .expect("creating CompactHeightfield succeeds");
+    let compact_heightfield = CompactHeightfield::<NoRegions>::new(
+      &heightfield,
+      &mut context,
+      /* walkable_height= */ 3,
+      /* walkable_climb= */ 0,
+    )
+    .expect("creating CompactHeightfield succeeds");
 
     assert_eq!(compact_heightfield.grid_width(), 5);
     assert_eq!(compact_heightfield.grid_height(), 5);
@@ -530,13 +529,8 @@ mod tests {
       .expect("rasterization succeeds");
 
     let mut compact_heightfield =
-      CompactHeightfield::<NoRegions>::create_from_heightfield(
-        &heightfield,
-        &mut context,
-        3,
-        0,
-      )
-      .expect("creating CompactHeightfield succeeds");
+      CompactHeightfield::<NoRegions>::new(&heightfield, &mut context, 3, 0)
+        .expect("creating CompactHeightfield succeeds");
 
     const W: u8 = WALKABLE_AREA_ID;
     assert_eq!(
@@ -596,14 +590,13 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let mut compact_heightfield =
-      CompactHeightfield::<NoRegions>::create_from_heightfield(
-        &heightfield,
-        &mut context,
-        /* walkable_height= */ 3,
-        /* walkable_climb= */ 0,
-      )
-      .expect("creating CompactHeightfield succeeds");
+    let mut compact_heightfield = CompactHeightfield::<NoRegions>::new(
+      &heightfield,
+      &mut context,
+      /* walkable_height= */ 3,
+      /* walkable_climb= */ 0,
+    )
+    .expect("creating CompactHeightfield succeeds");
 
     compact_heightfield
       .erode_walkable_area(&mut context, /* radius= */ 1)
