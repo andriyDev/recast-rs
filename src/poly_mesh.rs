@@ -7,6 +7,8 @@ use crate::{
   Vec3,
 };
 
+pub use recastnavigation_sys::RC_MESH_NULL_IDX as NULL_INDEX;
+
 pub struct PolyMesh {
   poly_mesh: wrappers::RawPolyMesh,
 }
@@ -64,6 +66,20 @@ impl PolyMesh {
     (0..self.vertices_len())
       .map(|index| PolyMeshVertex { poly_mesh: self, index })
   }
+
+  pub fn polygons_len(&self) -> usize {
+    self.poly_mesh.npolys as usize
+  }
+
+  pub fn polygon(&self, index: usize) -> PolyMeshPolygon {
+    assert!(index < self.polygons_len());
+    PolyMeshPolygon { poly_mesh: self, index }
+  }
+
+  pub fn polygons_iter(&self) -> impl Iterator<Item = PolyMeshPolygon> + '_ {
+    (0..self.polygons_len())
+      .map(|index| PolyMeshPolygon { poly_mesh: self, index })
+  }
 }
 
 pub struct PolyMeshVertex<'poly_mesh> {
@@ -83,6 +99,109 @@ impl<'poly_mesh> PolyMeshVertex<'poly_mesh> {
       raw_vector.y as f32 * self.poly_mesh.poly_mesh.ch,
       raw_vector.z as f32 * self.poly_mesh.poly_mesh.cs,
     )
+  }
+}
+
+pub struct PolyMeshPolygon<'poly_mesh> {
+  poly_mesh: &'poly_mesh PolyMesh,
+  index: usize,
+}
+
+impl<'poly_mesh> PolyMeshPolygon<'poly_mesh> {
+  pub fn vertices(&self) -> &'poly_mesh [u16] {
+    let nvp = self.poly_mesh.poly_mesh.nvp as usize;
+
+    // SAFETY: `polys` has a length of `maxpolys` * 2 * `nvp`. A lower-bound on
+    // this is `npolys` in place of `maxpolys` since `npolys` <= `maxpolys`.
+    // Therefore, the slice is fully covered by the allocated portion of
+    // `polys`.
+    let polys = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh.poly_mesh.polys,
+        self.poly_mesh.polygons_len() * 2 * nvp,
+      )
+    };
+
+    let start_index = self.index * 2 * nvp;
+    &polys[start_index..(start_index + nvp)]
+  }
+
+  pub fn neighbours(&self) -> &'poly_mesh [u16] {
+    let nvp = self.poly_mesh.poly_mesh.nvp as usize;
+
+    // SAFETY: `polys` has a length of `maxpolys` * 2 * `nvp`. A lower-bound on
+    // this is `npolys` in place of `maxpolys` since `npolys` <= `maxpolys`.
+    // Therefore, the slice is fully covered by the allocated portion of
+    // `polys`.
+    let polys = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh.poly_mesh.polys,
+        self.poly_mesh.polygons_len() * 2 * nvp,
+      )
+    };
+
+    // Start one `nvp` over to start at the neighbour section of the polygon.
+    let start_index = self.index * 2 * nvp + nvp;
+    &polys[start_index..(start_index + nvp)]
+  }
+
+  pub fn valid_vertices(&self) -> &'poly_mesh [u16] {
+    let vertices = self.vertices();
+    let index = vertices
+      .iter()
+      .position(|vertex_index| {
+        *vertex_index == recastnavigation_sys::RC_MESH_NULL_IDX
+      })
+      .unwrap_or(vertices.len());
+
+    &vertices[..index]
+  }
+
+  pub fn valid_neighbours(&self) -> &'poly_mesh [u16] {
+    let neighbours = self.neighbours();
+
+    &neighbours[..self.valid_vertices().len()]
+  }
+
+  pub fn region_id(&self) -> u16 {
+    // SAFETY: `regs` has a length of `maxpolys` which is >= `npolys`.
+    // Therefore, the slice is fully covered by the allocated portion of `regs`.
+    let regs = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh.poly_mesh.regs,
+        self.poly_mesh.polygons_len(),
+      )
+    };
+
+    regs[self.index]
+  }
+
+  pub fn flags(&self) -> u16 {
+    // SAFETY: `flags` has a length of `maxpolys` which is >= `npolys`.
+    // Therefore, the slice is fully covered by the allocated portion of
+    // `flags`.
+    let flags = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh.poly_mesh.flags,
+        self.poly_mesh.polygons_len(),
+      )
+    };
+
+    flags[self.index]
+  }
+
+  pub fn area_id(&self) -> u8 {
+    // SAFETY: `areas` has a length of `maxpolys` which is >= `npolys`.
+    // Therefore, the slice is fully covered by the allocated portion of
+    // `areas`.
+    let areas = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh.poly_mesh.areas,
+        self.poly_mesh.polygons_len(),
+      )
+    };
+
+    areas[self.index]
   }
 }
 
@@ -127,7 +246,7 @@ impl PolyMeshDetail {
 mod tests {
   use crate::{
     CompactHeightfield, Context, ContourBuildFlags, ContourSet, Heightfield,
-    NoRegions, PolyMesh, PolyMeshDetail, Vec3, WALKABLE_AREA_ID,
+    NoRegions, PolyMesh, PolyMeshDetail, Vec3, NULL_INDEX, WALKABLE_AREA_ID,
   };
 
   #[test]
@@ -207,6 +326,23 @@ mod tests {
         Vec3::<f32>::new(5.0, 1.0, 5.0),
         Vec3::<f32>::new(5.0, 1.0, 0.0),
       ]
+    );
+
+    let polygon_vertices = poly_mesh
+      .polygons_iter()
+      .map(|polygon| polygon.valid_vertices())
+      .collect::<Vec<_>>();
+
+    assert_eq!(polygon_vertices, [&[0, 1, 2, 3]]);
+
+    let polygon_neighbours = poly_mesh
+      .polygons_iter()
+      .map(|polygon| polygon.valid_neighbours())
+      .collect::<Vec<_>>();
+
+    assert_eq!(
+      polygon_neighbours,
+      [&[NULL_INDEX, NULL_INDEX, NULL_INDEX, NULL_INDEX]]
     );
 
     PolyMeshDetail::new(

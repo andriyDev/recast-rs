@@ -13,7 +13,7 @@ pub use compact_heightfield::{
 pub use contour_set::{ContourBuildFlags, ContourSet};
 pub use heightfield::{Heightfield, HeightfieldSpan};
 pub use heightfield_layer_set::{HeightfieldLayer, HeightfieldLayerSet};
-pub use poly_mesh::{PolyMesh, PolyMeshDetail};
+pub use poly_mesh::{PolyMesh, PolyMeshDetail, NULL_INDEX};
 
 pub use recastnavigation_sys::{
   RC_NULL_AREA as INVALID_AREA_ID, RC_WALKABLE_AREA as WALKABLE_AREA_ID,
