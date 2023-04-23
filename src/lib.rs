@@ -109,6 +109,52 @@ impl Heightfield {
     self.heightfield.ch
   }
 
+  pub fn spans_len(&self) -> usize {
+    (self.grid_width() * self.grid_height()) as usize
+  }
+
+  pub fn spans_iter(
+    &self,
+  ) -> impl Iterator<Item = Option<HeightfieldSpan>> + '_ {
+    // SAFETY: `self.heightfield.spans` is guaranteed to have exactly width *
+    // height entries, and pointer alignment is guaranteed by heightfield
+    // creation.
+    let raw_spans = unsafe {
+      std::slice::from_raw_parts(self.heightfield.spans, self.spans_len())
+    };
+
+    raw_spans.iter().map(|raw_ptr| {
+      // SAFETY: The span is properly aligned and allocated by creating/mutating
+      // the heightfield successfully.
+      unsafe { raw_ptr.as_mut() }
+        .map(|span| HeightfieldSpan { heightfield: self, span })
+    })
+  }
+
+  pub fn span(&self, index: usize) -> Option<HeightfieldSpan> {
+    // SAFETY: `self.heightfield.spans` is guaranteed to have exactly width *
+    // height entries, and pointer alignment is guaranteed by heightfield
+    // creation.
+    let raw_spans = unsafe {
+      std::slice::from_raw_parts(self.heightfield.spans, self.spans_len())
+    };
+
+    // SAFETY: The span is properly aligned and allocated by creating/mutating
+    // the heightfield successfully.
+    unsafe { raw_spans[index].as_mut() }
+      .map(|span| HeightfieldSpan { heightfield: self, span })
+  }
+
+  pub fn span_by_grid(
+    &self,
+    grid_x: i32,
+    grid_y: i32,
+  ) -> Option<HeightfieldSpan> {
+    assert!(0 <= grid_x && grid_x < self.grid_width());
+    assert!(0 <= grid_y && grid_y < self.grid_height());
+    self.span((grid_x + grid_y * self.grid_width()) as usize)
+  }
+
   pub fn rasterize_triangles(
     &mut self,
     context: &mut Context,
@@ -184,6 +230,63 @@ impl Heightfield {
     } else {
       Err(())
     }
+  }
+}
+
+#[derive(Clone, Copy)]
+pub struct HeightfieldSpan<'heightfield> {
+  heightfield: &'heightfield Heightfield,
+  span: &'heightfield recastnavigation_sys::rcSpan,
+}
+
+impl<'heightfield> HeightfieldSpan<'heightfield> {
+  pub fn height_min_u32(&self) -> u32 {
+    self.span.smin()
+  }
+
+  pub fn height_max_u32(&self) -> u32 {
+    self.span.smax()
+  }
+
+  pub fn height_min_f32(&self) -> f32 {
+    self.height_min_u32() as f32 * self.heightfield.cell_height()
+      + self.heightfield.min_bounds().y
+  }
+
+  pub fn height_max_f32(&self) -> f32 {
+    self.height_max_u32() as f32 * self.heightfield.cell_height()
+      + self.heightfield.min_bounds().y
+  }
+
+  pub fn area_id(&self) -> u32 {
+    self.span.area()
+  }
+
+  pub fn next_span_in_column(&self) -> Option<Self> {
+    // SAFETY: The span is properly aligned and allocated by creating/mutating
+    // the heightfield successfully.
+    unsafe { self.span.next.as_mut() }
+      .map(|span| HeightfieldSpan { heightfield: self.heightfield, span })
+  }
+
+  pub fn collect(mut head: Option<Self>) -> Vec<Self> {
+    let mut vec = Vec::new();
+    while let Some(span) = head {
+      vec.push(span);
+
+      head = span.next_span_in_column();
+    }
+    vec
+  }
+}
+
+impl<'hf> std::fmt::Debug for HeightfieldSpan<'hf> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("HeightfieldSpan")
+      .field("smin", &self.height_min_u32())
+      .field("smax", &self.height_max_u32())
+      .field("area", &self.area_id())
+      .finish()
   }
 }
 
@@ -580,8 +683,26 @@ pub struct PolyMeshDetail {
 mod tests {
   use crate::{
     CompactHeightfield, Context, ContourBuildFlags, HasRegions, Heightfield,
-    NoRegions, Vec3, WALKABLE_AREA_ID,
+    HeightfieldSpan, NoRegions, Vec3, WALKABLE_AREA_ID,
   };
+
+  macro_rules! assert_span_column_eq {
+      ($span_column: expr, $expected_column: expr) => {{
+        let span_column = $span_column;
+        let expected_column = $expected_column;
+
+        assert_eq!(span_column.len(), expected_column.len(), "\n\nactual_spans={:?}\nexpected_spans={:?}", span_column, expected_column);
+
+        for (index, (actual_span, expected_span)) in span_column.iter().zip(expected_column.iter()).enumerate() {
+          assert_eq!(
+            (actual_span.height_min_u32(), actual_span.height_max_u32(), actual_span.area_id()),
+            *expected_span,
+            "\n\nColumn differs at index {}\n\nactual_span={:?}\nexpected_span=HeightfieldSpan {{ smin: {}, smax: {}, area: {} }}",
+            index, actual_span, expected_span.0, expected_span.1, expected_span.2
+          );
+        }
+      }};
+  }
 
   #[test]
   fn rasterize_triangles() {
@@ -595,12 +716,12 @@ mod tests {
         .expect("creation succeeds");
 
     let vertices = [
-      Vec3::new(0.0, 0.5, 0.0),
-      Vec3::new(5.0, 0.5, 0.0),
-      Vec3::new(5.0, 0.5, 5.0),
-      Vec3::new(0.0, 0.5, 0.0),
-      Vec3::new(5.0, 0.5, 5.0),
-      Vec3::new(0.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.25, 0.0),
+      Vec3::new(5.0, 0.25, 0.0),
+      Vec3::new(5.0, 0.25, 5.0),
+      Vec3::new(5.0, 0.25, 5.0),
+      Vec3::new(0.0, 0.25, 5.0),
+      Vec3::new(0.0, 0.25, 0.0),
     ];
 
     let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
@@ -615,6 +736,23 @@ mod tests {
     assert_eq!(heightfield.max_bounds(), max_bounds);
     assert_eq!(heightfield.cell_horizontal_size(), 0.5);
     assert_eq!(heightfield.cell_height(), 0.5);
+
+    let columns = heightfield
+      .spans_iter()
+      .map(|column_head| HeightfieldSpan::collect(column_head))
+      .collect::<Vec<Vec<HeightfieldSpan>>>();
+    assert_eq!(columns.len(), 100);
+
+    let index_at = |x, y| x + y * heightfield.grid_width() as usize;
+
+    for x in 0..heightfield.grid_width() as usize {
+      for y in 0..heightfield.grid_height() as usize {
+        assert_span_column_eq!(
+          &columns[index_at(x, y)],
+          [(0, 1, WALKABLE_AREA_ID as u32)]
+        );
+      }
+    }
   }
 
   #[test]
