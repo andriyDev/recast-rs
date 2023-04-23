@@ -2,8 +2,7 @@ use std::ops::{Deref, DerefMut, Range};
 
 use recastnavigation_sys::{
   rcBuildCompactHeightfield, rcBuildDistanceField, rcBuildLayerRegions,
-  rcBuildRegions, rcBuildRegionsMonotone, rcCompactCell, rcCompactSpan,
-  rcErodeWalkableArea,
+  rcBuildRegions, rcBuildRegionsMonotone, rcCompactSpan, rcErodeWalkableArea,
 };
 
 use crate::{wrappers, Context, Heightfield, Vec3};
