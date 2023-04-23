@@ -597,22 +597,40 @@ mod tests {
       .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
       .expect("rasterization succeeds");
 
-    let compact_heightfield =
+    let mut compact_heightfield =
       CompactHeightfield::<NoRegions>::create_from_heightfield(
         &heightfield,
         &mut context,
-        3,
-        0,
+        /* walkable_height= */ 3,
+        /* walkable_climb= */ 0,
       )
       .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield
+      .erode_walkable_area(&mut context, /* radius= */ 1)
+      .expect("erosion successful");
 
     let compact_heightfield_with_regions =
       build_fn(compact_heightfield, &mut context)
         .expect("building regions succeeds");
 
-    assert_eq!(compact_heightfield_with_regions.border_size(), 1);
-    assert_eq!(compact_heightfield_with_regions.max_region_id(), 6);
-    assert_eq!(compact_heightfield_with_regions.max_distance(), 4);
+    assert_eq!(compact_heightfield_with_regions.border_size(), 0);
+    assert_eq!(compact_heightfield_with_regions.max_region_id(), 2);
+    assert_eq!(compact_heightfield_with_regions.max_distance(), 2);
+
+    assert_eq!(
+      compact_heightfield_with_regions
+        .spans_iter()
+        .map(|span| span.region_id())
+        .collect::<Vec<_>>(),
+      [
+        0, 0, 0, 0, 0, //
+        0, 1, 1, 1, 0, //
+        0, 1, 1, 1, 0, //
+        0, 1, 1, 1, 0, //
+        0, 0, 0, 0, 0, //
+      ]
+    );
   }
 
   #[test]
@@ -621,7 +639,10 @@ mod tests {
       compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
     ) -> Result<CompactHeightfield<HasRegions>, ()> {
-      compact_heightfield.build_regions(context, 1, 1, 1)
+      compact_heightfield.build_regions(
+        context, /* border_size= */ 0, /* min_region_area= */ 1,
+        /* merge_region_area= */ 1,
+      )
     }
 
     build_regions_base(build_fn);
@@ -633,7 +654,9 @@ mod tests {
       compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
     ) -> Result<CompactHeightfield<HasRegions>, ()> {
-      compact_heightfield.build_layer_regions(context, 1, 1)
+      compact_heightfield.build_layer_regions(
+        context, /* border_size= */ 0, /* min_region_area= */ 1,
+      )
     }
 
     build_regions_base(build_fn);
@@ -645,7 +668,10 @@ mod tests {
       compact_heightfield: CompactHeightfield<NoRegions>,
       context: &mut Context,
     ) -> Result<CompactHeightfield<HasRegions>, ()> {
-      compact_heightfield.build_regions_monotone(context, 1, 1, 1)
+      compact_heightfield.build_regions_monotone(
+        context, /* border_size= */ 0, /* min_region_area= */ 1,
+        /* merge_region_area= */ 1,
+      )
     }
 
     build_regions_base(build_fn);
