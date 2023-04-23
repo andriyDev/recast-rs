@@ -41,34 +41,7 @@ pub trait CompactHeightfieldState {}
 impl CompactHeightfieldState for NoRegions {}
 impl CompactHeightfieldState for HasRegions {}
 
-impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
-  pub fn build_heightfield_layer_set(
-    &self,
-    context: &mut Context,
-    border_size: i32,
-    walkable_height: i32,
-  ) -> Result<HeightfieldLayerSet, ()> {
-    let mut layer_set = wrappers::RawHeightfieldLayerSet::new()?;
-
-    // SAFETY: rcBuildHeightfieldLayers only mutates `context.context` and
-    // `layer_set`. It also only reads from `self.compact_heightfield`.
-    let build_succeeded = unsafe {
-      rcBuildHeightfieldLayers(
-        context.context.deref_mut(),
-        self.compact_heightfield.deref(),
-        border_size,
-        walkable_height,
-        layer_set.deref_mut(),
-      )
-    };
-
-    if build_succeeded {
-      Ok(HeightfieldLayerSet { layer_set })
-    } else {
-      Err(())
-    }
-  }
-}
+impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {}
 
 impl CompactHeightfield<NoRegions> {
   pub fn create_from_heightfield(
@@ -270,6 +243,34 @@ pub struct HeightfieldLayerSet {
 }
 
 impl HeightfieldLayerSet {
+  pub fn new(
+    compact_heightfield: &CompactHeightfield<impl CompactHeightfieldState>,
+    context: &mut Context,
+    border_size: i32,
+    walkable_height: i32,
+  ) -> Result<HeightfieldLayerSet, ()> {
+    let mut layer_set = wrappers::RawHeightfieldLayerSet::new()?;
+
+    // SAFETY: rcBuildHeightfieldLayers only mutates `context.context` and
+    // `layer_set`. It also only reads from
+    // `compact_heightfield.compact_heightfield`.
+    let build_succeeded = unsafe {
+      rcBuildHeightfieldLayers(
+        context.context.deref_mut(),
+        compact_heightfield.compact_heightfield.deref(),
+        border_size,
+        walkable_height,
+        layer_set.deref_mut(),
+      )
+    };
+
+    if build_succeeded {
+      Ok(HeightfieldLayerSet { layer_set })
+    } else {
+      Err(())
+    }
+  }
+
   pub fn len(&self) -> usize {
     self.layer_set.nlayers as usize
   }
@@ -449,7 +450,7 @@ pub struct PolyMeshDetail {
 mod tests {
   use crate::{
     CompactHeightfield, Context, ContourBuildFlags, HasRegions, Heightfield,
-    HeightfieldSpan, NoRegions, Vec3, WALKABLE_AREA_ID,
+    HeightfieldLayerSet, HeightfieldSpan, NoRegions, Vec3, WALKABLE_AREA_ID,
   };
 
   macro_rules! assert_span_column_eq {
@@ -679,9 +680,13 @@ mod tests {
       .erode_walkable_area(&mut context, 1)
       .expect("erosion succeeds");
 
-    let layer_set = compact_heightfield
-      .build_heightfield_layer_set(&mut context, 0, 3)
-      .expect("heightfield layers created");
+    let layer_set = HeightfieldLayerSet::new(
+      &compact_heightfield,
+      &mut context,
+      /* border_size= */ 0,
+      /* walkable_height= */ 3,
+    )
+    .expect("heightfield layers created");
 
     let layer_set = layer_set.as_vec();
     assert_eq!(layer_set.len(), 1);
