@@ -5,7 +5,7 @@ use recastnavigation_sys::{
   rcBuildRegions, rcBuildRegionsMonotone, rcErodeWalkableArea,
 };
 
-use crate::{wrappers, Context, Heightfield};
+use crate::{wrappers, Context, Heightfield, Vec3};
 
 pub struct CompactHeightfield<TypeState: CompactHeightfieldState> {
   pub(crate) compact_heightfield: wrappers::RawCompactHeightfield,
@@ -19,7 +19,47 @@ pub trait CompactHeightfieldState {}
 impl CompactHeightfieldState for NoRegions {}
 impl CompactHeightfieldState for HasRegions {}
 
-impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {}
+impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
+  pub fn grid_width(&self) -> i32 {
+    self.compact_heightfield.width
+  }
+
+  pub fn grid_height(&self) -> i32 {
+    self.compact_heightfield.height
+  }
+
+  pub fn walkable_height(&self) -> i32 {
+    self.compact_heightfield.walkableHeight
+  }
+
+  pub fn walkable_climb(&self) -> i32 {
+    self.compact_heightfield.walkableClimb
+  }
+
+  pub fn min_bounds(&self) -> Vec3<f32> {
+    Vec3::new(
+      self.compact_heightfield.bmin[0],
+      self.compact_heightfield.bmin[1],
+      self.compact_heightfield.bmin[2],
+    )
+  }
+
+  pub fn max_bounds(&self) -> Vec3<f32> {
+    Vec3::new(
+      self.compact_heightfield.bmax[0],
+      self.compact_heightfield.bmax[1],
+      self.compact_heightfield.bmax[2],
+    )
+  }
+
+  pub fn cell_horizontal_size(&self) -> f32 {
+    self.compact_heightfield.cs
+  }
+
+  pub fn cell_height(&self) -> f32 {
+    self.compact_heightfield.ch
+  }
+}
 
 impl CompactHeightfield<NoRegions> {
   pub fn create_from_heightfield(
@@ -180,12 +220,74 @@ impl CompactHeightfield<NoRegions> {
   }
 }
 
+impl CompactHeightfield<HasRegions> {
+  pub fn border_size(&self) -> i32 {
+    self.compact_heightfield.borderSize
+  }
+
+  pub fn max_region_id(&self) -> u16 {
+    self.compact_heightfield.maxRegions
+  }
+
+  pub fn max_distance(&self) -> u16 {
+    self.compact_heightfield.maxDistance
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use crate::{
     CompactHeightfield, Context, HasRegions, Heightfield, NoRegions, Vec3,
     WALKABLE_AREA_ID,
   };
+
+  #[test]
+  fn create_compact_heightfield() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let compact_heightfield =
+      CompactHeightfield::<NoRegions>::create_from_heightfield(
+        &heightfield,
+        &mut context,
+        /* walkable_height= */ 3,
+        /* walkable_climb= */ 0,
+      )
+      .expect("creating CompactHeightfield succeeds");
+
+    assert_eq!(compact_heightfield.grid_width(), 5);
+    assert_eq!(compact_heightfield.grid_height(), 5);
+    assert_eq!(compact_heightfield.walkable_height(), 3);
+    assert_eq!(compact_heightfield.walkable_climb(), 0);
+    assert_eq!(compact_heightfield.min_bounds(), min_bounds);
+    assert_eq!(
+      compact_heightfield.max_bounds(),
+      // The bounds are expanded to allow the top of the heightfield to be
+      // walked on.
+      Vec3::new(max_bounds.x, max_bounds.y + 3.0, max_bounds.z)
+    );
+  }
 
   #[test]
   fn erode_area() {
@@ -266,8 +368,13 @@ mod tests {
       )
       .expect("creating CompactHeightfield succeeds");
 
-    build_fn(compact_heightfield, &mut context)
-      .expect("building regions succeeds");
+    let compact_heightfield_with_regions =
+      build_fn(compact_heightfield, &mut context)
+        .expect("building regions succeeds");
+
+    assert_eq!(compact_heightfield_with_regions.border_size(), 1);
+    assert_eq!(compact_heightfield_with_regions.max_region_id(), 6);
+    assert_eq!(compact_heightfield_with_regions.max_distance(), 4);
   }
 
   #[test]
