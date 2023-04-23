@@ -375,21 +375,27 @@ impl ContourSet {
       Err(())
     }
   }
+}
 
-  pub fn build_poly_mesh(
-    &self,
+pub struct PolyMesh {
+  poly_mesh: wrappers::RawPolyMesh,
+}
+
+impl PolyMesh {
+  pub fn new(
+    contour_set: &ContourSet,
     context: &mut Context,
     max_vertices_per_polygon: i32,
   ) -> Result<PolyMesh, ()> {
     let mut poly_mesh = wrappers::RawPolyMesh::new()?;
 
     // SAFETY: rcBuildPolyMesh only modifies `context.context` and `poly_mesh`,
-    // both of which are taken by mutable borrows. `self.contour_set` is only
-    // read and is passed by immutable borrow.
+    // both of which are taken by mutable borrows. `contour_set.contour_set` is
+    // only read and is passed by immutable borrow.
     let build_succeeded = unsafe {
       rcBuildPolyMesh(
         context.context.deref_mut(),
-        self.contour_set.deref(),
+        contour_set.contour_set.deref(),
         max_vertices_per_polygon,
         poly_mesh.deref_mut(),
       )
@@ -403,15 +409,15 @@ impl ContourSet {
   }
 }
 
-pub struct PolyMesh {
-  poly_mesh: wrappers::RawPolyMesh,
+pub struct PolyMeshDetail {
+  poly_mesh_detail: wrappers::RawPolyMeshDetail,
 }
 
-impl PolyMesh {
-  pub fn build_poly_mesh_detail<TypeState: CompactHeightfieldState>(
-    &self,
+impl PolyMeshDetail {
+  pub fn new(
+    poly_mesh: &PolyMesh,
     context: &mut Context,
-    compact_heightfield: &CompactHeightfield<TypeState>,
+    compact_heightfield: &CompactHeightfield<impl CompactHeightfieldState>,
     sample_distance: f32,
     sample_max_error: f32,
   ) -> Result<PolyMeshDetail, ()> {
@@ -419,12 +425,12 @@ impl PolyMesh {
 
     // SAFETY: rcBuildPolyMeshDetail only modifies `context.context` and
     // `poly_mesh_detail`, both of which are taken by mutable borrows.
-    // `self.poly_mesh` and `compact_heightfield.compact_heightfield` are only
-    // read and are passed by immutable borrows.
+    // `poly_mesh.poly_mesh` and `compact_heightfield.compact_heightfield` are
+    // only read and are passed by immutable borrows.
     let build_succeeded = unsafe {
       rcBuildPolyMeshDetail(
         context.context.deref_mut(),
-        self.poly_mesh.deref(),
+        poly_mesh.poly_mesh.deref(),
         compact_heightfield.compact_heightfield.deref(),
         sample_distance,
         sample_max_error,
@@ -440,16 +446,12 @@ impl PolyMesh {
   }
 }
 
-pub struct PolyMeshDetail {
-  poly_mesh_detail: wrappers::RawPolyMeshDetail,
-}
-
 #[cfg(test)]
 mod tests {
   use crate::{
     CompactHeightfield, Context, ContourBuildFlags, ContourSet, HasRegions,
-    Heightfield, HeightfieldLayerSet, HeightfieldSpan, NoRegions, Vec3,
-    WALKABLE_AREA_ID,
+    Heightfield, HeightfieldLayerSet, HeightfieldSpan, NoRegions, PolyMesh,
+    PolyMeshDetail, Vec3, WALKABLE_AREA_ID,
   };
 
   macro_rules! assert_span_column_eq {
@@ -806,14 +808,14 @@ mod tests {
     .expect("contours built");
 
     let poly_mesh =
-      contour_set.build_poly_mesh(&mut context, 5).expect("poly mesh built");
-    poly_mesh
-      .build_poly_mesh_detail(
-        &mut context,
-        &compact_heightfield_with_regions,
-        1.0,
-        0.1,
-      )
-      .expect("poly mesh detail built");
+      PolyMesh::new(&contour_set, &mut context, 5).expect("poly mesh built");
+    PolyMeshDetail::new(
+      &poly_mesh,
+      &mut context,
+      &compact_heightfield_with_regions,
+      /* sample_distance= */ 1.0,
+      /* sample_max_error= */ 0.1,
+    )
+    .expect("poly mesh detail built");
   }
 }
