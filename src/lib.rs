@@ -140,7 +140,7 @@ impl Heightfield {
         context.context.deref_mut(),
         &vertices[0].x,
         area_ids.as_ptr(),
-        vertices.len() as i32,
+        num_triangles as i32,
         self.heightfield.deref_mut(),
         flag_merge_threshold,
       )
