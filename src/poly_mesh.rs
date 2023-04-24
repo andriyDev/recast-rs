@@ -276,6 +276,133 @@ impl PolyMeshDetail {
       Err(())
     }
   }
+
+  pub fn vertices(&self) -> &[Vec3<f32>] {
+    // SAFETY: `verts` has `nverts` * 3 f32's, so casting to `nverts`
+    // Vec3<f32>'s is safe. The slice is well aligned and non-null since
+    // creation was successful.
+    unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh_detail.verts as *const Vec3<f32>,
+        self.poly_mesh_detail.nverts as usize,
+      )
+    }
+  }
+
+  pub fn submeshes_len(&self) -> usize {
+    self.poly_mesh_detail.nmeshes as usize
+  }
+
+  pub fn submesh(&self, index: usize) -> PolyMeshDetailSubmesh<'_> {
+    assert!(index <= self.submeshes_len());
+    PolyMeshDetailSubmesh { poly_mesh_detail: self, index }
+  }
+
+  pub fn submeshes_iter(
+    &self,
+  ) -> impl Iterator<Item = PolyMeshDetailSubmesh> + '_ {
+    (0..self.submeshes_len())
+      .map(|index| PolyMeshDetailSubmesh { poly_mesh_detail: self, index })
+  }
+}
+
+pub struct PolyMeshDetailSubmesh<'poly_mesh_detail> {
+  poly_mesh_detail: &'poly_mesh_detail PolyMeshDetail,
+  index: usize,
+}
+
+impl<'poly_mesh_detail> PolyMeshDetailSubmesh<'poly_mesh_detail> {
+  fn raw_mesh_data(&self) -> &'poly_mesh_detail [u32] {
+    // SAFETY: `meshes` is guaranteed to be non-null, well-aligned, and have 4 *
+    // `nmeshes` u32's, since constructing the PolyMeshDetail succeeded.
+    let raw_meshes = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh_detail.poly_mesh_detail.meshes,
+        self.poly_mesh_detail.poly_mesh_detail.nmeshes as usize * 4,
+      )
+    };
+
+    &raw_meshes[(self.index * 4)..(self.index * 4 + 4)]
+  }
+
+  pub fn vertices(&self) -> &'poly_mesh_detail [Vec3<f32>] {
+    let raw_mesh_data = self.raw_mesh_data();
+    let vert_start = raw_mesh_data[0] as usize;
+    let vert_len = raw_mesh_data[1] as usize;
+    &self.poly_mesh_detail.vertices()[vert_start..(vert_start + vert_len)]
+  }
+
+  pub fn triangles_len(&self) -> usize {
+    let raw_mesh_data = self.raw_mesh_data();
+    raw_mesh_data[3] as usize
+  }
+
+  pub fn triangles_iter(
+    &self,
+  ) -> impl Iterator<Item = PolyMeshDetailTriangle<'poly_mesh_detail>>
+       + 'poly_mesh_detail {
+    let raw_mesh_data = self.raw_mesh_data();
+    let tri_start = raw_mesh_data[2] as usize;
+    let tri_len = raw_mesh_data[3] as usize;
+
+    // SAFETY: `tris` is guaranteed to be non-null, well-aligned, and have 4 *
+    // `ntris` u8's, since constructing the PolyMeshDetail succeeded.
+    let raw_triangles = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh_detail.poly_mesh_detail.tris,
+        self.poly_mesh_detail.poly_mesh_detail.ntris as usize * 4,
+      )
+    };
+
+    (tri_start..(tri_start + tri_len)).map(|tri_index| PolyMeshDetailTriangle {
+      raw_triangle_data: &raw_triangles[(tri_index * 4)..(tri_index * 4 + 4)],
+    })
+  }
+
+  pub fn triangle(
+    &self,
+    index: usize,
+  ) -> PolyMeshDetailTriangle<'poly_mesh_detail> {
+    let raw_mesh_data = self.raw_mesh_data();
+    let tri_start = raw_mesh_data[2] as usize;
+    let tri_len = raw_mesh_data[3] as usize;
+    assert!(tri_start <= index && index < tri_start + tri_len);
+
+    // SAFETY: `tris` is guaranteed to be non-null, well-aligned, and have 4 *
+    // `ntris` u8's, since constructing the PolyMeshDetail succeeded.
+    let raw_triangles = unsafe {
+      std::slice::from_raw_parts(
+        self.poly_mesh_detail.poly_mesh_detail.tris,
+        self.poly_mesh_detail.poly_mesh_detail.ntris as usize * 4,
+      )
+    };
+    PolyMeshDetailTriangle {
+      raw_triangle_data: &raw_triangles[(index * 4)..(index * 4 + 4)],
+    }
+  }
+}
+
+pub struct PolyMeshDetailTriangle<'poly_mesh_detail> {
+  raw_triangle_data: &'poly_mesh_detail [u8],
+}
+
+impl<'poly_mesh_detail> PolyMeshDetailTriangle<'poly_mesh_detail> {
+  pub fn vertex_indices(&self) -> (usize, usize, usize) {
+    (
+      self.raw_triangle_data[0] as usize,
+      self.raw_triangle_data[1] as usize,
+      self.raw_triangle_data[2] as usize,
+    )
+  }
+
+  pub fn are_edges_on_mesh_boundary(&self) -> (bool, bool, bool) {
+    let triangle_flags = self.raw_triangle_data[3];
+    (
+      triangle_flags & 0b000001 != 0,
+      triangle_flags & 0b000100 != 0,
+      triangle_flags & 0b010000 != 0,
+    )
+  }
 }
 
 #[cfg(test)]
@@ -286,7 +413,7 @@ mod tests {
   };
 
   #[test]
-  fn build_poly_mesh_and_poly_mesh_detail() {
+  fn build_poly_mesh() {
     let mut context = Context::new();
 
     let min_bounds = Vec3::new(0.0, 0.0, 0.0);
@@ -404,8 +531,71 @@ mod tests {
       polygon_neighbours,
       [&[NULL_INDEX, NULL_INDEX, NULL_INDEX, NULL_INDEX]]
     );
+  }
 
-    PolyMeshDetail::new(
+  #[test]
+  fn build_poly_mesh_detail() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(0.0, 0.5, 5.0),
+    ];
+
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_triangles(&mut context, &vertices, &area_ids, 1)
+      .expect("rasterization succeeds");
+
+    let compact_heightfield = CompactHeightfield::<NoRegions>::new(
+      &heightfield,
+      &mut context,
+      /* walkable_height= */ 3,
+      /* walkable_climb= */ 0,
+    )
+    .expect("creating CompactHeightfield succeeds");
+
+    let compact_heightfield_with_regions = compact_heightfield
+      .build_regions(
+        &mut context,
+        /* border_size= */ 0,
+        /* min_region_area= */ 1,
+        /* merge_region_area= */ 1,
+      )
+      .expect("regions built");
+
+    let contour_set = ContourSet::new(
+      &compact_heightfield_with_regions,
+      &mut context,
+      /* max_error= */ 1.0,
+      /* max_edge_len= */ 10,
+      ContourBuildFlags {
+        tessellate_wall_edges: true,
+        tessellate_area_edges: false,
+      },
+    )
+    .expect("contours built");
+
+    let poly_mesh = PolyMesh::new(
+      &contour_set,
+      &mut context,
+      /* max_vertices_per_polygon= */ 5,
+    )
+    .expect("poly mesh built");
+
+    let poly_mesh_detail = PolyMeshDetail::new(
       &poly_mesh,
       &mut context,
       &compact_heightfield_with_regions,
@@ -413,5 +603,47 @@ mod tests {
       /* sample_max_error= */ 0.1,
     )
     .expect("poly mesh detail built");
+
+    let vertices = poly_mesh_detail
+      .submeshes_iter()
+      .map(|submesh| submesh.vertices())
+      .collect::<Vec<_>>();
+
+    assert_eq!(
+      vertices,
+      [[
+        Vec3::new(0.0, 2.0, 0.0),
+        Vec3::new(0.0, 2.0, 5.0),
+        Vec3::new(5.0, 2.0, 5.0),
+        Vec3::new(5.0, 2.0, 0.0),
+      ]]
+    );
+
+    let triangle_indices = poly_mesh_detail
+      .submeshes_iter()
+      .map(|submesh| {
+        submesh
+          .triangles_iter()
+          .map(|triangle| triangle.vertex_indices())
+          .collect()
+      })
+      .collect::<Vec<Vec<_>>>();
+
+    assert_eq!(triangle_indices, [[(3, 0, 2), (0, 1, 2)]]);
+
+    let triangle_edge_boundaries = poly_mesh_detail
+      .submeshes_iter()
+      .map(|submesh| {
+        submesh
+          .triangles_iter()
+          .map(|triangle| triangle.are_edges_on_mesh_boundary())
+          .collect()
+      })
+      .collect::<Vec<Vec<_>>>();
+
+    assert_eq!(
+      triangle_edge_boundaries,
+      [[(true, false, true), (true, true, false)]]
+    );
   }
 }
