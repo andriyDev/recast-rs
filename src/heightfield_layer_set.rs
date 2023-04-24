@@ -193,7 +193,7 @@ mod tests {
     assert_eq!(layer.grid_width(), 5);
     assert_eq!(layer.grid_height(), 5);
     assert_eq!(layer.grid_min_bounds(), Vec3::<i32>::new(1, 1, 1));
-    // TODO: Figure out why this is shrunk by 2 on this side instead of 1.
+    // Grid bounds are inclusive, so the max grid coordinate is (3, 1, 3).
     assert_eq!(layer.grid_max_bounds(), Vec3::<i32>::new(3, 1, 3));
   }
 }
