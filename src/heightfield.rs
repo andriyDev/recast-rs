@@ -1,7 +1,8 @@
 use std::ops::DerefMut;
 
 use recastnavigation_sys::{
-  rcCalcGridSize, rcCreateHeightfield, rcRasterizeTriangles2,
+  rcCalcGridSize, rcCreateHeightfield, rcRasterizeTriangles,
+  rcRasterizeTriangles1, rcRasterizeTriangles2,
 };
 
 use crate::{wrappers, Context, Vec3};
@@ -179,7 +180,77 @@ impl Heightfield {
     }
   }
 
-  // TODO: Add support for indexed triangles.
+  pub fn rasterize_indexed_triangles_u16(
+    &mut self,
+    context: &mut Context,
+    vertices: &[Vec3<f32>],
+    triangles: &[Vec3<u16>],
+    area_ids: &[u8],
+    flag_merge_threshold: i32,
+  ) -> Result<(), ()> {
+    assert_eq!(
+      triangles.len(),
+      area_ids.len(),
+      "area_ids should have one entry per triangle."
+    );
+
+    // SAFETY: rcRasterizeTriangles1 only mutates `context.context` and
+    // `self.heightfield` which are both passed by exclusive borrows.
+    let rasterized_triangles = unsafe {
+      rcRasterizeTriangles1(
+        context.context.deref_mut(),
+        vertices.as_ptr() as *const f32,
+        vertices.len() as i32,
+        triangles.as_ptr() as *const u16,
+        area_ids.as_ptr(),
+        triangles.len() as i32,
+        self.heightfield.deref_mut(),
+        flag_merge_threshold,
+      )
+    };
+
+    if rasterized_triangles {
+      Ok(())
+    } else {
+      Err(())
+    }
+  }
+
+  pub fn rasterize_indexed_triangles_i32(
+    &mut self,
+    context: &mut Context,
+    vertices: &[Vec3<f32>],
+    triangles: &[Vec3<i32>],
+    area_ids: &[u8],
+    flag_merge_threshold: i32,
+  ) -> Result<(), ()> {
+    assert_eq!(
+      triangles.len(),
+      area_ids.len(),
+      "area_ids should have one entry per triangle."
+    );
+
+    // SAFETY: rcRasterizeTriangles1 only mutates `context.context` and
+    // `self.heightfield` which are both passed by exclusive borrows.
+    let rasterized_triangles = unsafe {
+      rcRasterizeTriangles(
+        context.context.deref_mut(),
+        vertices.as_ptr() as *const f32,
+        vertices.len() as i32,
+        triangles.as_ptr() as *const i32,
+        area_ids.as_ptr(),
+        triangles.len() as i32,
+        self.heightfield.deref_mut(),
+        flag_merge_threshold,
+      )
+    };
+
+    if rasterized_triangles {
+      Ok(())
+    } else {
+      Err(())
+    }
+  }
 }
 
 #[derive(Clone, Copy)]
@@ -307,6 +378,82 @@ mod tests {
         assert_span_column_eq!(
           &columns[index_at(x, y)],
           [(0, 1, WALKABLE_AREA_ID as u32)]
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn rasterize_indexed_triangles() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(5.0, 5.0, 5.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 0.5, 0.5)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.25, 0.0),
+      Vec3::new(5.0, 0.25, 0.0),
+      Vec3::new(5.0, 0.25, 5.0),
+      Vec3::new(0.0, 0.25, 5.0),
+      Vec3::new(3.0, 3.25, 0.0),
+      Vec3::new(5.0, 3.25, 0.0),
+      Vec3::new(5.0, 3.25, 5.0),
+      Vec3::new(3.0, 3.25, 5.0),
+    ];
+
+    let triangles = [
+      Vec3::new(0, 1, 2),
+      Vec3::new(2, 3, 0),
+      Vec3::new(4, 5, 6),
+      Vec3::new(6, 7, 4),
+    ];
+
+    let area_ids =
+      [WALKABLE_AREA_ID, WALKABLE_AREA_ID, WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    heightfield
+      .rasterize_indexed_triangles_i32(
+        &mut context,
+        &vertices,
+        &triangles,
+        &area_ids,
+        1,
+      )
+      .expect("rasterization succeeds");
+
+    assert_eq!(heightfield.grid_width(), 10);
+    assert_eq!(heightfield.grid_height(), 10);
+    assert_eq!(heightfield.min_bounds(), min_bounds);
+    assert_eq!(heightfield.max_bounds(), max_bounds);
+    assert_eq!(heightfield.cell_horizontal_size(), 0.5);
+    assert_eq!(heightfield.cell_height(), 0.5);
+
+    let columns = heightfield
+      .spans_iter()
+      .map(|column_head| HeightfieldSpan::collect(column_head))
+      .collect::<Vec<Vec<HeightfieldSpan>>>();
+    assert_eq!(columns.len(), 100);
+
+    let index_at = |x, y| x + y * heightfield.grid_width() as usize;
+
+    for x in 0..6 as usize {
+      for y in 0..heightfield.grid_height() as usize {
+        assert_span_column_eq!(
+          &columns[index_at(x, y)],
+          [(0, 1, WALKABLE_AREA_ID as u32)]
+        );
+      }
+    }
+
+    for x in 6..heightfield.grid_width() as usize {
+      for y in 0..heightfield.grid_height() as usize {
+        assert_span_column_eq!(
+          &columns[index_at(x, y)],
+          [(0, 1, WALKABLE_AREA_ID as u32), (6, 7, WALKABLE_AREA_ID as u32)]
         );
       }
     }
