@@ -195,5 +195,40 @@ mod tests {
     assert_eq!(layer.grid_min_bounds(), Vec3::<i32>::new(1, 1, 1));
     // Grid bounds are inclusive, so the max grid coordinate is (3, 1, 3).
     assert_eq!(layer.grid_max_bounds(), Vec3::<i32>::new(3, 1, 3));
+
+    const N: u8 = 0xff;
+    assert_eq!(
+      layer.heights(),
+      [
+        N, N, N, N, N, //
+        N, 0, 0, 0, N, //
+        N, 0, 0, 0, N, //
+        N, 0, 0, 0, N, //
+        N, N, N, N, N, //
+      ]
+    );
+
+    const W: u8 = WALKABLE_AREA_ID;
+    assert_eq!(
+      layer.areas(),
+      [
+        0, 0, 0, 0, 0, //
+        0, W, W, W, 0, //
+        0, W, W, W, 0, //
+        0, W, W, W, 0, //
+        0, 0, 0, 0, 0, //
+      ]
+    );
+
+    assert_eq!(
+      layer.packed_connection_info(),
+      [
+        0b0000, 0b0000, 0b0000, 0b0000, 0b0000, //
+        0b0000, 0b0110, 0b0111, 0b0011, 0b0000, //
+        0b0000, 0b1110, 0b1111, 0b1011, 0b0000, //
+        0b0000, 0b1100, 0b1101, 0b1001, 0b0000, //
+        0b0000, 0b0000, 0b0000, 0b0000, 0b0000, //
+      ]
+    );
   }
 }
