@@ -6,6 +6,7 @@ mod contour_set;
 mod heightfield;
 mod heightfield_layer_set;
 mod poly_mesh;
+pub mod util;
 
 pub use compact_heightfield::{
   CompactHeightfield, CompactHeightfieldState, HasRegions, NoRegions,
