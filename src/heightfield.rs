@@ -180,7 +180,9 @@ impl Heightfield {
     }
   }
 
-  pub fn rasterize_indexed_triangles_u16(
+  // SAFETY: All indices in `triangles` must be in the range of `vertices`
+  // indices.
+  pub unsafe fn rasterize_indexed_triangles_u16_unchecked(
     &mut self,
     context: &mut Context,
     vertices: &[Vec3<f32>],
@@ -195,7 +197,9 @@ impl Heightfield {
     );
 
     // SAFETY: rcRasterizeTriangles1 only mutates `context.context` and
-    // `self.heightfield` which are both passed by exclusive borrows.
+    // `self.heightfield` which are both passed by exclusive borrows. `vertices`
+    // and `triangles` are only read, and only in the valid range of elements
+    // (due to the function safety guarantee).
     let rasterized_triangles = unsafe {
       rcRasterizeTriangles1(
         context.context.deref_mut(),
@@ -216,7 +220,9 @@ impl Heightfield {
     }
   }
 
-  pub fn rasterize_indexed_triangles_i32(
+  // SAFETY: All indices in `triangles` must be in the range of `vertices`
+  // indices.
+  pub unsafe fn rasterize_indexed_triangles_i32_unchecked(
     &mut self,
     context: &mut Context,
     vertices: &[Vec3<f32>],
@@ -231,7 +237,9 @@ impl Heightfield {
     );
 
     // SAFETY: rcRasterizeTriangles1 only mutates `context.context` and
-    // `self.heightfield` which are both passed by exclusive borrows.
+    // `self.heightfield` which are both passed by exclusive borrows. `vertices`
+    // and `triangles` are only read, and only in the valid range of elements
+    // (due to the function safety guarantee).
     let rasterized_triangles = unsafe {
       rcRasterizeTriangles(
         context.context.deref_mut(),
@@ -249,6 +257,73 @@ impl Heightfield {
       Ok(())
     } else {
       Err(())
+    }
+  }
+
+  pub fn rasterize_indexed_triangles_u16(
+    &mut self,
+    context: &mut Context,
+    vertices: &[Vec3<f32>],
+    triangles: &[Vec3<u16>],
+    area_ids: &[u8],
+    flag_merge_threshold: i32,
+  ) -> Result<(), ()> {
+    for triangle in triangles {
+      assert!(
+        triangle.x < vertices.len() as u16
+          && triangle.y < vertices.len() as u16
+          && triangle.z < vertices.len() as u16,
+        "Triangle indexes out-of-bounds vertex. Triangle={:?}, vertices_len={}",
+        *triangle,
+        vertices.len()
+      );
+    }
+
+    // SAFETY: We have checked that all indices in `triangles` are valid.
+    // Therefore, the function is guaranteed to be safe.
+    unsafe {
+      self.rasterize_indexed_triangles_u16_unchecked(
+        context,
+        vertices,
+        triangles,
+        area_ids,
+        flag_merge_threshold,
+      )
+    }
+  }
+
+  pub fn rasterize_indexed_triangles_i32(
+    &mut self,
+    context: &mut Context,
+    vertices: &[Vec3<f32>],
+    triangles: &[Vec3<i32>],
+    area_ids: &[u8],
+    flag_merge_threshold: i32,
+  ) -> Result<(), ()> {
+    for triangle in triangles {
+      assert!(
+        0 <= triangle.x
+          && triangle.x < vertices.len() as i32
+          && 0 <= triangle.y
+          && triangle.y < vertices.len() as i32
+          && 0 <= triangle.z
+          && triangle.z < vertices.len() as i32,
+        "Triangle indexes out-of-bounds vertex. Triangle={:?}, vertices_len={}",
+        *triangle,
+        vertices.len()
+      );
+    }
+
+    // SAFETY: We have checked that all indices in `triangles` are valid.
+    // Therefore, the function is guaranteed to be safe.
+    unsafe {
+      self.rasterize_indexed_triangles_i32_unchecked(
+        context,
+        vertices,
+        triangles,
+        area_ids,
+        flag_merge_threshold,
+      )
     }
   }
 }
@@ -312,6 +387,8 @@ impl<'hf> std::fmt::Debug for HeightfieldSpan<'hf> {
 
 #[cfg(test)]
 mod tests {
+  use std::panic::AssertUnwindSafe;
+
   use crate::{Context, Heightfield, HeightfieldSpan, Vec3, WALKABLE_AREA_ID};
 
   macro_rules! assert_span_column_eq {
@@ -456,6 +533,120 @@ mod tests {
           [(0, 1, WALKABLE_AREA_ID as u32), (6, 7, WALKABLE_AREA_ID as u32)]
         );
       }
+    }
+  }
+
+  #[test]
+  fn checks_for_invalid_triangles_before_rasterizing_indexed_u16() {
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 0.0),
+    ];
+
+    let triangles = [Vec3::new(0, 1, 2)];
+
+    let triangle_area_ids = [WALKABLE_AREA_ID];
+
+    let mut context = Context::new();
+    let mut heightfield = Heightfield::new(
+      &mut context,
+      Vec3::new(0.0, 0.0, 0.0),
+      Vec3::new(5.0, 5.0, 5.0),
+      1.0,
+      1.0,
+    )
+    .expect("creating heightfield successful");
+
+    heightfield
+      .rasterize_indexed_triangles_u16(
+        &mut context,
+        &vertices,
+        &triangles,
+        &triangle_area_ids,
+        1,
+      )
+      .expect("rasterizes triangles");
+
+    let invalid_triangles =
+      [Vec3::new(3, 1, 2), Vec3::new(0, 3, 2), Vec3::new(0, 1, 3)];
+
+    for invalid_triangle_slice in invalid_triangles.chunks(1) {
+      let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let _ = heightfield.rasterize_indexed_triangles_u16(
+          &mut context,
+          &vertices,
+          invalid_triangle_slice,
+          &triangle_area_ids,
+          1,
+        );
+      }));
+
+      assert!(
+        result.is_err(),
+        "Expected invalid triangle to break an assert, but succeeded. Triangle={:?}",
+        invalid_triangle_slice[0]
+      );
+    }
+  }
+
+  #[test]
+  fn checks_for_invalid_triangles_before_rasterizing_indexed_i32() {
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 0.0),
+    ];
+
+    let triangles = [Vec3::new(0, 1, 2)];
+
+    let triangle_area_ids = [WALKABLE_AREA_ID];
+
+    let mut context = Context::new();
+    let mut heightfield = Heightfield::new(
+      &mut context,
+      Vec3::new(0.0, 0.0, 0.0),
+      Vec3::new(5.0, 5.0, 5.0),
+      1.0,
+      1.0,
+    )
+    .expect("creating heightfield successful");
+
+    heightfield
+      .rasterize_indexed_triangles_i32(
+        &mut context,
+        &vertices,
+        &triangles,
+        &triangle_area_ids,
+        1,
+      )
+      .expect("rasterizes triangles");
+
+    let invalid_triangles = [
+      Vec3::new(-1, 1, 2),
+      Vec3::new(3, 1, 2),
+      Vec3::new(0, -2, 2),
+      Vec3::new(0, 3, 2),
+      Vec3::new(0, 1, -3),
+      Vec3::new(0, 1, 3),
+    ];
+
+    for invalid_triangle_slice in invalid_triangles.chunks(1) {
+      let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let _ = heightfield.rasterize_indexed_triangles_i32(
+          &mut context,
+          &vertices,
+          invalid_triangle_slice,
+          &triangle_area_ids,
+          1,
+        );
+      }));
+
+      assert!(
+        result.is_err(),
+        "Expected invalid triangle to break an assert, but succeeded. Triangle={:?}",
+        invalid_triangle_slice[0]
+      );
     }
   }
 }
