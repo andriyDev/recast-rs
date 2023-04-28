@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut, Range};
 use recastnavigation_sys::{
   rcBuildCompactHeightfield, rcBuildDistanceField, rcBuildLayerRegions,
   rcBuildRegions, rcBuildRegionsMonotone, rcCompactSpan, rcErodeWalkableArea,
+  rcMarkBoxArea, rcMarkConvexPolyArea, rcMarkCylinderArea,
 };
 
 use crate::{wrappers, Context, Heightfield, Vec3};
@@ -169,6 +170,74 @@ impl CompactHeightfield<NoRegions> {
     } else {
       Err(())
     }
+  }
+
+  pub fn mark_box_area_with_id(
+    &mut self,
+    context: &mut Context,
+    min_bounds: Vec3<f32>,
+    max_bounds: Vec3<f32>,
+    new_id: u8,
+  ) {
+    // SAFETY: `rcMarkBoxArea` only mutates `context.context` and
+    // `self.compact_heightfield`, which are exclusively borrowed. `min_bounds`
+    // and `max_bounds` are only read.
+    unsafe {
+      rcMarkBoxArea(
+        context.context.deref_mut(),
+        &min_bounds.x,
+        &max_bounds.x,
+        new_id,
+        self.compact_heightfield.deref_mut(),
+      )
+    };
+  }
+
+  pub fn mark_cylinder_area_with_id(
+    &mut self,
+    context: &mut Context,
+    position: Vec3<f32>,
+    radius: f32,
+    height: f32,
+    new_id: u8,
+  ) {
+    // SAFETY: `rcMarkCylinderArea` only mutates `context.context` and
+    // `self.compact_heightfield`, which are exclusively borrowed. `position`
+    // are only read.
+    unsafe {
+      rcMarkCylinderArea(
+        context.context.deref_mut(),
+        &position.x,
+        radius,
+        height,
+        new_id,
+        self.compact_heightfield.deref_mut(),
+      )
+    };
+  }
+
+  pub fn mark_convex_poly_area_with_id(
+    &mut self,
+    context: &mut Context,
+    vertices: &[Vec3<f32>],
+    base_height: f32,
+    top_height: f32,
+    new_id: u8,
+  ) {
+    // SAFETY: `rcMarkCylinderArea` only mutates `context.context` and
+    // `self.compact_heightfield`, which are exclusively borrowed. `vertices`
+    // are only read.
+    unsafe {
+      rcMarkConvexPolyArea(
+        context.context.deref_mut(),
+        vertices.as_ptr() as *const f32,
+        vertices.len() as i32,
+        base_height,
+        top_height,
+        new_id,
+        self.compact_heightfield.deref_mut(),
+      )
+    };
   }
 
   fn build_distance_field(&mut self, context: &mut Context) -> Result<(), ()> {
@@ -556,6 +625,91 @@ mod tests {
         0, W, W, W, 0, //
         0, W, W, W, 0, //
         0, 0, 0, 0, 0, //
+      ]
+    );
+  }
+
+  #[test]
+  fn marks_areas() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(10.0, 10.0, 10.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(10.0, 0.5, 0.0),
+      Vec3::new(10.0, 0.5, 10.0),
+      Vec3::new(0.0, 0.5, 10.0),
+    ];
+
+    let triangles = [Vec3::new(0, 2, 1), Vec3::new(2, 0, 3)];
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    // SAFETY: Triangles all have valid indices.
+    unsafe {
+      heightfield.rasterize_indexed_triangles_i32_unchecked(
+        &mut context,
+        &vertices,
+        &triangles,
+        &area_ids,
+        1,
+      )
+    }
+    .expect("rasterization succeeds");
+
+    let mut compact_heightfield =
+      CompactHeightfield::<NoRegions>::new(&heightfield, &mut context, 3, 0)
+        .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield.mark_box_area_with_id(
+      &mut context,
+      Vec3::new(0.0, 0.0, 0.0),
+      Vec3::new(2.99, 1.0, 2.99),
+      1,
+    );
+
+    compact_heightfield.mark_cylinder_area_with_id(
+      &mut context,
+      Vec3::new(2.5, 1.0, 7.5),
+      2.5,
+      2.0,
+      2,
+    );
+
+    compact_heightfield.mark_convex_poly_area_with_id(
+      &mut context,
+      &[
+        Vec3::new(5.0, 0.0, 0.0),
+        Vec3::new(10.0, 0.0, 0.0),
+        Vec3::new(10.0, 0.0, 3.0),
+        Vec3::new(8.0, 0.0, 8.0),
+        Vec3::new(7.0, 0.0, 8.0),
+        Vec3::new(5.0, 0.0, 3.0),
+      ],
+      0.0,
+      2.0,
+      4,
+    );
+
+    const W: u8 = WALKABLE_AREA_ID;
+    assert_eq!(
+      compact_heightfield.span_areas(),
+      [
+        1, 1, 1, W, W, 4, 4, 4, 4, 4, //
+        1, 1, 1, W, W, 4, 4, 4, 4, 4, //
+        1, 1, 1, W, W, 4, 4, 4, 4, 4, //
+        W, W, W, W, W, 4, 4, 4, 4, 4, //
+        W, W, W, W, W, W, 4, 4, 4, W, //
+        W, 2, 2, 2, W, W, 4, 4, 4, W, //
+        2, 2, 2, 2, 2, W, 4, 4, 4, W, //
+        2, 2, 2, 2, 2, W, W, 4, W, W, //
+        2, 2, 2, 2, 2, W, W, W, W, W, //
+        W, 2, 2, 2, W, W, W, W, W, W, //
       ]
     );
   }
