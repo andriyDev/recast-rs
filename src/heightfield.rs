@@ -1,8 +1,9 @@
 use std::ops::DerefMut;
 
 use recastnavigation_sys::{
-  rcCalcGridSize, rcCreateHeightfield, rcRasterizeTriangles,
-  rcRasterizeTriangles1, rcRasterizeTriangles2,
+  rcCalcGridSize, rcCreateHeightfield, rcFilterLedgeSpans,
+  rcFilterLowHangingWalkableObstacles, rcFilterWalkableLowHeightSpans,
+  rcRasterizeTriangles, rcRasterizeTriangles1, rcRasterizeTriangles2,
 };
 
 use crate::{wrappers, Context, Vec3};
@@ -326,6 +327,56 @@ impl Heightfield {
       )
     }
   }
+
+  pub fn filter_low_hanging_walkable_obstacles(
+    &mut self,
+    context: &mut Context,
+    walkable_climb: i32,
+  ) {
+    // SAFETY: Only `context.context` and `self.heightfield` are mutated, and
+    // these are passed by exclusive borrows.
+    unsafe {
+      rcFilterLowHangingWalkableObstacles(
+        context.context.deref_mut(),
+        walkable_climb,
+        self.heightfield.deref_mut(),
+      )
+    };
+  }
+
+  pub fn filter_ledge_spans(
+    &mut self,
+    context: &mut Context,
+    walkable_height: i32,
+    walkable_climb: i32,
+  ) {
+    // SAFETY: Only `context.context` and `self.heightfield` are mutated, and
+    // these are passed by exclusive borrows.
+    unsafe {
+      rcFilterLedgeSpans(
+        context.context.deref_mut(),
+        walkable_height,
+        walkable_climb,
+        self.heightfield.deref_mut(),
+      )
+    };
+  }
+
+  pub fn filter_walkable_low_height_spans(
+    &mut self,
+    context: &mut Context,
+    walkable_height: i32,
+  ) {
+    // SAFETY: Only `context.context` and `self.heightfield` are mutated, and
+    // these are passed by exclusive borrows.
+    unsafe {
+      rcFilterWalkableLowHeightSpans(
+        context.context.deref_mut(),
+        walkable_height,
+        self.heightfield.deref_mut(),
+      )
+    };
+  }
 }
 
 #[derive(Clone, Copy)]
@@ -648,5 +699,284 @@ mod tests {
         invalid_triangle_slice[0]
       );
     }
+  }
+
+  #[test]
+  fn filters_low_hanging_obstacles() {
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(0.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      // An unwalkable ledge near the ground.
+      Vec3::new(3.0, 2.5, 0.0),
+      Vec3::new(3.0, 2.5, 5.0),
+      Vec3::new(5.0, 2.5, 5.0),
+      Vec3::new(5.0, 2.5, 0.0),
+      // An unwalkable ledge high above the ground.
+      Vec3::new(0.0, 3.5, 0.0),
+      Vec3::new(0.0, 3.5, 5.0),
+      Vec3::new(2.0, 3.5, 5.0),
+      Vec3::new(2.0, 3.5, 0.0),
+    ];
+
+    let triangles = [
+      Vec3::new(0, 1, 2),
+      Vec3::new(2, 3, 0),
+      Vec3::new(4, 5, 6),
+      Vec3::new(6, 7, 4),
+      Vec3::new(8, 9, 10),
+      Vec3::new(10, 11, 8),
+    ];
+
+    const W: u8 = WALKABLE_AREA_ID;
+    let triangle_area_ids = [W, W, 0, 0, 0, 0];
+
+    let mut context = Context::new();
+    let mut heightfield = Heightfield::new(
+      &mut context,
+      Vec3::new(0.0, 0.0, 0.0),
+      Vec3::new(5.0, 10.0, 5.0),
+      /* cell_horizontal_size= */ 1.0,
+      /* cell_height= */ 1.0,
+    )
+    .expect("creates heightfield successfully");
+
+    // SAFETY: Triangle indices are all in range.
+    unsafe {
+      heightfield.rasterize_indexed_triangles_i32_unchecked(
+        &mut context,
+        &vertices,
+        &triangles,
+        &triangle_area_ids,
+        /* flag_merge_threshold= */ 1,
+      )
+    }
+    .expect("rasterization succeeds");
+
+    // No filtering so far, so ledge is not walkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(4, 2)
+        .expect("floor rasterized")
+        .next_span_in_column()
+        .expect("ledge rasterized")
+        .area_id(),
+      0
+    );
+
+    heightfield.filter_low_hanging_walkable_obstacles(
+      &mut context,
+      /* walkable_climb= */ 2,
+    );
+
+    // Low ledge is now walkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(4, 2)
+        .expect("floor rasterized")
+        .next_span_in_column()
+        .expect("ledge rasterized")
+        .area_id(),
+      WALKABLE_AREA_ID as _
+    );
+
+    // High ledge is still not walkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(1, 2)
+        .expect("floor rasterized")
+        .next_span_in_column()
+        .expect("ledge rasterized")
+        .area_id(),
+      0
+    );
+  }
+
+  // TODO: Fix this test.
+  #[test]
+  fn filters_ledges() {
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(0.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      // Climable ledge.
+      Vec3::new(3.0, 2.5, 0.0),
+      Vec3::new(3.0, 2.5, 5.0),
+      Vec3::new(5.0, 2.5, 5.0),
+      Vec3::new(5.0, 2.5, 0.0),
+      // Unclimbable ledge.
+      Vec3::new(0.0, 7.5, 0.0),
+      Vec3::new(0.0, 7.5, 5.0),
+      Vec3::new(2.0, 7.5, 5.0),
+      Vec3::new(2.0, 7.5, 0.0),
+    ];
+
+    let triangles = [
+      Vec3::new(0, 1, 2),
+      Vec3::new(2, 3, 0),
+      Vec3::new(4, 5, 6),
+      Vec3::new(6, 7, 4),
+      Vec3::new(8, 9, 10),
+      Vec3::new(10, 11, 8),
+    ];
+
+    const W: u8 = WALKABLE_AREA_ID;
+    let triangle_area_ids = [W, W, W, W, W, W];
+
+    let mut context = Context::new();
+    let mut heightfield = Heightfield::new(
+      &mut context,
+      Vec3::new(0.0, 0.0, 0.0),
+      Vec3::new(5.0, 10.0, 5.0),
+      /* cell_horizontal_size= */ 1.0,
+      /* cell_height= */ 1.0,
+    )
+    .expect("creates heightfield successfully");
+
+    // SAFETY: Triangle indices are all in range.
+    unsafe {
+      heightfield.rasterize_indexed_triangles_i32_unchecked(
+        &mut context,
+        &vertices,
+        &triangles,
+        &triangle_area_ids,
+        /* flag_merge_threshold= */ 1,
+      )
+    }
+    .expect("rasterization succeeds");
+
+    // No filtering so far, so unclimbable ledge is still walkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(1, 2)
+        .expect("floor rasterized")
+        .next_span_in_column()
+        .expect("ledge rasterized")
+        .area_id(),
+      WALKABLE_AREA_ID as _
+    );
+
+    heightfield.filter_ledge_spans(
+      &mut context,
+      /* walkable_height= */ 3,
+      /* walkable_climb= */ 3,
+    );
+
+    // Unclimbable ledge is no longer walkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(1, 2)
+        .expect("floor rasterized")
+        .next_span_in_column()
+        .expect("ledge rasterized")
+        .area_id(),
+      0
+    );
+
+    // Climbable ledge is still walkable
+    assert_eq!(
+      heightfield
+        .span_by_grid(3, 2)
+        .expect("floor rasterized")
+        .next_span_in_column()
+        .expect("ledge rasterized")
+        .area_id(),
+      WALKABLE_AREA_ID as _
+    );
+  }
+
+  #[test]
+  fn filters_low_height_spans() {
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(0.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 5.0),
+      Vec3::new(5.0, 0.5, 0.0),
+      // Low ceiling.
+      Vec3::new(3.0, 3.5, 0.0),
+      Vec3::new(3.0, 3.5, 5.0),
+      Vec3::new(5.0, 3.5, 5.0),
+      Vec3::new(5.0, 3.5, 0.0),
+      // Just high enough ceiling.
+      Vec3::new(1.0, 5.5, 0.0),
+      Vec3::new(1.0, 5.5, 5.0),
+      Vec3::new(3.0, 5.5, 5.0),
+      Vec3::new(3.0, 5.5, 0.0),
+    ];
+
+    let triangles = [
+      Vec3::new(0, 1, 2),
+      Vec3::new(2, 3, 0),
+      Vec3::new(4, 5, 6),
+      Vec3::new(6, 7, 4),
+      Vec3::new(8, 9, 10),
+      Vec3::new(10, 11, 8),
+    ];
+
+    const W: u8 = WALKABLE_AREA_ID;
+    let triangle_area_ids = [W, W, W, W, W, W];
+
+    let mut context = Context::new();
+    let mut heightfield = Heightfield::new(
+      &mut context,
+      Vec3::new(0.0, 0.0, 0.0),
+      Vec3::new(5.0, 10.0, 5.0),
+      /* cell_horizontal_size= */ 1.0,
+      /* cell_height= */ 1.0,
+    )
+    .expect("creates heightfield successfully");
+
+    // SAFETY: Triangle indices are all in range.
+    unsafe {
+      heightfield.rasterize_indexed_triangles_i32_unchecked(
+        &mut context,
+        &vertices,
+        &triangles,
+        &triangle_area_ids,
+        /* flag_merge_threshold= */ 1,
+      )
+    }
+    .expect("rasterization succeeds");
+
+    // No filtering so far, so low ceiling height is ok.
+    assert_eq!(
+      heightfield
+        .span_by_grid(4, 2)
+        .expect("span should be present since rasterization occured")
+        .area_id(),
+      WALKABLE_AREA_ID as _
+    );
+
+    heightfield.filter_walkable_low_height_spans(
+      &mut context,
+      /* walkable_height= */ 3,
+    );
+
+    // Low ceiling height has marked this span as unwalkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(4, 2)
+        .expect("span should be present since rasterization occured")
+        .area_id(),
+      0
+    );
+    // The ceiling here is high enough to be walkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(2, 2)
+        .expect("span should be present since rasterization occured")
+        .area_id(),
+      WALKABLE_AREA_ID as _
+    );
+    // No ceiling here, so should still be walkable.
+    assert_eq!(
+      heightfield
+        .span_by_grid(0, 2)
+        .expect("span should be present since rasterization occured")
+        .area_id(),
+      WALKABLE_AREA_ID as _
+    );
   }
 }
