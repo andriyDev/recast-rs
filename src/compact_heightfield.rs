@@ -4,6 +4,7 @@ use recastnavigation_sys::{
   rcBuildCompactHeightfield, rcBuildDistanceField, rcBuildLayerRegions,
   rcBuildRegions, rcBuildRegionsMonotone, rcCompactSpan, rcErodeWalkableArea,
   rcMarkBoxArea, rcMarkConvexPolyArea, rcMarkCylinderArea,
+  rcMedianFilterWalkableArea,
 };
 
 use crate::{wrappers, Context, Heightfield, Vec3};
@@ -238,6 +239,26 @@ impl CompactHeightfield<NoRegions> {
         self.compact_heightfield.deref_mut(),
       )
     };
+  }
+
+  pub fn median_filter_area_ids(
+    &mut self,
+    context: &mut Context,
+  ) -> Result<(), ()> {
+    // SAFETY: rcMedianFilterWalkableArea only mutates `context.context` and
+    // `self.compact_heightfield`, which are both mutably borrowed.
+    let success = unsafe {
+      rcMedianFilterWalkableArea(
+        context.context.deref_mut(),
+        self.compact_heightfield.deref_mut(),
+      )
+    };
+
+    if success {
+      Ok(())
+    } else {
+      Err(())
+    }
   }
 
   fn build_distance_field(&mut self, context: &mut Context) -> Result<(), ()> {
@@ -710,6 +731,102 @@ mod tests {
         2, 2, 2, 2, 2, W, W, 4, W, W, //
         2, 2, 2, 2, 2, W, W, W, W, W, //
         W, 2, 2, 2, W, W, W, W, W, W, //
+      ]
+    );
+  }
+
+  #[test]
+  fn median_filter_applied() {
+    let mut context = Context::new();
+
+    let min_bounds = Vec3::new(0.0, 0.0, 0.0);
+    let max_bounds = Vec3::new(10.0, 10.0, 10.0);
+
+    let mut heightfield =
+      Heightfield::new(&mut context, min_bounds, max_bounds, 1.0, 1.0)
+        .expect("creation succeeds");
+
+    let vertices = [
+      Vec3::new(0.0, 0.5, 0.0),
+      Vec3::new(10.0, 0.5, 0.0),
+      Vec3::new(10.0, 0.5, 10.0),
+      Vec3::new(0.0, 0.5, 10.0),
+    ];
+
+    let triangles = [Vec3::new(0, 2, 1), Vec3::new(2, 0, 3)];
+    let area_ids = [WALKABLE_AREA_ID, WALKABLE_AREA_ID];
+
+    // SAFETY: Triangles all have valid indices.
+    unsafe {
+      heightfield.rasterize_indexed_triangles_i32_unchecked(
+        &mut context,
+        &vertices,
+        &triangles,
+        &area_ids,
+        1,
+      )
+    }
+    .expect("rasterization succeeds");
+
+    let mut compact_heightfield =
+      CompactHeightfield::<NoRegions>::new(&heightfield, &mut context, 3, 0)
+        .expect("creating CompactHeightfield succeeds");
+
+    compact_heightfield.mark_box_area_with_id(
+      &mut context,
+      Vec3::new(3.01, 0.0, 3.01),
+      Vec3::new(6.99, 1.0, 6.99),
+      1,
+    );
+
+    compact_heightfield.mark_box_area_with_id(
+      &mut context,
+      Vec3::new(5.01, 0.0, 5.01),
+      Vec3::new(10.0, 1.0, 10.0),
+      2,
+    );
+
+    // One cell that is filtered out as noise.
+    compact_heightfield.mark_box_area_with_id(
+      &mut context,
+      Vec3::new(1.01, 0.0, 1.01),
+      Vec3::new(1.99, 1.0, 1.99),
+      4,
+    );
+
+    const W: u8 = WALKABLE_AREA_ID;
+    assert_eq!(
+      compact_heightfield.span_areas(),
+      [
+        W, W, W, W, W, W, W, W, W, W, //
+        W, 4, W, W, W, W, W, W, W, W, //
+        W, W, W, W, W, W, W, W, W, W, //
+        W, W, W, 1, 1, 1, 1, W, W, W, //
+        W, W, W, 1, 1, 1, 1, W, W, W, //
+        W, W, W, 1, 1, 2, 2, 2, 2, 2, //
+        W, W, W, 1, 1, 2, 2, 2, 2, 2, //
+        W, W, W, W, W, 2, 2, 2, 2, 2, //
+        W, W, W, W, W, 2, 2, 2, 2, 2, //
+        W, W, W, W, W, 2, 2, 2, 2, 2, //
+      ]
+    );
+
+    compact_heightfield
+      .median_filter_area_ids(&mut context)
+      .expect("median filter succeeded");
+    assert_eq!(
+      compact_heightfield.span_areas(),
+      [
+        W, W, W, W, W, W, W, W, W, W, //
+        W, W, W, W, W, W, W, W, W, W, //
+        W, W, W, W, W, W, W, W, W, W, //
+        W, W, W, W, 1, 1, W, W, W, W, //
+        W, W, W, 1, 1, 1, 2, 2, W, W, //
+        W, W, W, 1, 1, 1, 2, 2, 2, 2, //
+        W, W, W, W, 2, 2, 2, 2, 2, 2, //
+        W, W, W, W, 2, 2, 2, 2, 2, 2, //
+        W, W, W, W, W, 2, 2, 2, 2, 2, //
+        W, W, W, W, W, 2, 2, 2, 2, 2, //
       ]
     );
   }
