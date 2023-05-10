@@ -3,6 +3,19 @@ edition = "2021"
 name = "recast-rs"
 version = "0.1.0"
 
+description = "Bindings for Recast from recastnavigation"
+
+license-file = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/andriyDev/recast-rs"
+
+categories = ["game-development"]
+keywords = ["recast", "navigation", "mesh", "pathfinding"]
+
+exclude = [
+  ".github/*",
+]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
