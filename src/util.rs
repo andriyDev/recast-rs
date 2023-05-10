@@ -6,6 +6,8 @@ use recastnavigation_sys::{
 
 use crate::{Context, Vec3};
 
+// Computes the bounds of the provided `vertices`. The returned tuple is
+// `(min_bounds, max_bounds)`.
 pub fn calculate_bounds(vertices: &[Vec3<f32>]) -> (Vec3<f32>, Vec3<f32>) {
   let mut min_bounds = Vec3::<f32>::new(0.0, 0.0, 0.0);
   let mut max_bounds = Vec3::<f32>::new(0.0, 0.0, 0.0);
@@ -25,6 +27,11 @@ pub fn calculate_bounds(vertices: &[Vec3<f32>]) -> (Vec3<f32>, Vec3<f32>) {
   (min_bounds, max_bounds)
 }
 
+// Marks triangles as walkable if their slope is less than
+// `walkable_slope_angle`. Each triangle contains 3 indices that index into
+// `vertices`. `WALKABLE_AREA_ID` will be stored in `triangle_area_ids` in the
+// corresponding index for each triangle if walkable (so we must have
+// `triangle_area_ids.len() == triangles.len()`).
 // SAFETY: This function is only safe if all indices in `triangles` are less
 // than the length of `vertices`.
 pub unsafe fn mark_walkable_triangles_unchecked(
@@ -57,6 +64,8 @@ pub unsafe fn mark_walkable_triangles_unchecked(
   }
 }
 
+// Same as `mark_walkable_triangles_unchecked`, but checks that each triangle
+// indexes a valid vertex first (panics otherwise).
 pub fn mark_walkable_triangles(
   context: &mut Context,
   walkable_slope_angle: f32,
@@ -91,6 +100,9 @@ pub fn mark_walkable_triangles(
   };
 }
 
+// Same as `mark_walkable_triangles_unchecked`, except it marks triangles
+// unwalkable (`INVALID_AREA_ID`) if they are steeper than
+// `walkable_slope_angle`.
 // SAFETY: This function is only safe if all indices in `triangles` are less
 // than the length of `vertices`.
 pub unsafe fn clear_unwalkable_triangles_unchecked(
@@ -123,6 +135,8 @@ pub unsafe fn clear_unwalkable_triangles_unchecked(
   }
 }
 
+// Same as `clear_unwalkable_triangles_unchecked`, but checks that each triangle
+// indexes a valid vertex first (panics otherwise).
 pub fn clear_unwalkable_triangles(
   context: &mut Context,
   walkable_slope_angle: f32,
