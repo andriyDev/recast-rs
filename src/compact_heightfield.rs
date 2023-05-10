@@ -425,9 +425,9 @@ where
   pub fn connection(&self, direction: Direction) -> u32 {
     let shift = match direction {
       Direction::NegX => 0,
-      Direction::PosY => 1,
+      Direction::PosZ => 1,
       Direction::PosX => 2,
-      Direction::NegY => 3,
+      Direction::NegZ => 3,
     } * 6;
 
     self.span.con() >> shift & 0x3f
@@ -451,9 +451,9 @@ impl<'compact_heightfield> std::fmt::Debug
         "connections",
         &[
           (Direction::NegX, self.connection(Direction::NegX)),
-          (Direction::PosY, self.connection(Direction::PosY)),
+          (Direction::PosZ, self.connection(Direction::PosZ)),
           (Direction::PosX, self.connection(Direction::PosX)),
-          (Direction::NegY, self.connection(Direction::NegY)),
+          (Direction::NegZ, self.connection(Direction::NegZ)),
         ],
       )
       .finish()
@@ -471,9 +471,9 @@ impl<'compact_heightfield> std::fmt::Debug
         "connections",
         &[
           (Direction::NegX, self.connection(Direction::NegX)),
-          (Direction::PosY, self.connection(Direction::PosY)),
+          (Direction::PosZ, self.connection(Direction::PosZ)),
           (Direction::PosX, self.connection(Direction::PosX)),
-          (Direction::NegY, self.connection(Direction::NegY)),
+          (Direction::NegZ, self.connection(Direction::NegZ)),
         ],
       )
       .field("region_id", &self.region_id())
@@ -484,9 +484,9 @@ impl<'compact_heightfield> std::fmt::Debug
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Direction {
   NegX,
-  PosY,
+  PosZ,
   PosX,
-  NegY,
+  NegZ,
 }
 
 #[cfg(test)]
