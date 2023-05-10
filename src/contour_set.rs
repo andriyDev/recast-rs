@@ -12,11 +12,16 @@ pub struct ContourBuildFlags {
   pub tessellate_area_edges: bool,
 }
 
+// A Recast contour set.
 pub struct ContourSet {
   pub(crate) contour_set: wrappers::RawContourSet,
 }
 
 impl ContourSet {
+  // Create a ContourSet from a CompactHeightfield with regions. `max_error`
+  // determines the maximum distance a simplified contour's border edges should
+  // deviate from the original raw contour. `max_edge_len` determines the
+  // maximum allowed length of contour edges (in grid units).
   pub fn new(
     compact_heightfield: &CompactHeightfield<HasRegions>,
     context: &mut Context,
