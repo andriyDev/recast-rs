@@ -9,14 +9,22 @@ use recastnavigation_sys::{
 
 use crate::{wrappers, Context, Heightfield, Vec3};
 
+// A Recast CompactHeightfield. This is generally created from a Heightfield and
+// represents the non-solid areas of the world.
 pub struct CompactHeightfield<TypeState: CompactHeightfieldState> {
   pub(crate) compact_heightfield: wrappers::RawCompactHeightfield,
   marker: std::marker::PhantomData<TypeState>,
 }
 
+// Type state for CompactHeightfield representing when a CompactHeightfield has
+// no region data. In this state, CompactHeightfields are still mutable.
 pub enum NoRegions {}
+// Type state for CompactHeightfield representing when a CompactHeightfield has
+// region data. In this state, CompactHeightfields are generally immutable and
+// can only be used to generate other objects.
 pub enum HasRegions {}
 
+// Type state trait for CompactHeightfield.
 pub trait CompactHeightfieldState {}
 impl CompactHeightfieldState for NoRegions {}
 impl CompactHeightfieldState for HasRegions {}
@@ -62,6 +70,7 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
     self.compact_heightfield.ch
   }
 
+  // Creates an Iterator of the cells. See `cell` for more on cells.
   pub fn cells_iter(&self) -> impl Iterator<Item = Range<usize>> + '_ {
     // SAFETY: `cells` is guaranteed to have `width` * `heights` cells, and be
     // well aligned. `cells` is also owned by `self` so the lifetime of the
@@ -78,6 +87,9 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
     })
   }
 
+  // Returns the range of spans for each cell. A cell is a column of spans. Each
+  // grid cell contains a column (so there are `grid_width * grid_height`
+  // cells), and cells are ordered by x followed by z.
   pub fn cell(&self, index: usize) -> Range<usize> {
     // SAFETY: `cells` is guaranteed to have `width` * `heights` cells, and be
     // well aligned.
@@ -96,6 +108,7 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
     self.compact_heightfield.spanCount as usize
   }
 
+  // Creates an Iterator of all spans.
   pub fn spans_iter(
     &self,
   ) -> impl Iterator<Item = CompactSpan<'_, TypeState>> + '_ {
@@ -111,6 +124,7 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
     raw_spans.iter().map(|span| CompactSpan { compact_heightfield: self, span })
   }
 
+  // Returns a slice of the area IDs of each span.
   pub fn span_areas(&self) -> &[u8] {
     // SAFETY: `areas` is guaranteed to have `spanCount` elements, and be well
     // aligned.
@@ -124,6 +138,9 @@ impl<TypeState: CompactHeightfieldState> CompactHeightfield<TypeState> {
 }
 
 impl CompactHeightfield<NoRegions> {
+  // Creates a CompactHeightfield from a `heightfield`. `walkable_height` and
+  // `walkable_climb` are used to determine the areas where spans should be
+  // generated.
   pub fn new(
     heightfield: &Heightfield,
     context: &mut Context,
@@ -151,6 +168,7 @@ impl CompactHeightfield<NoRegions> {
     }
   }
 
+  // Erodes the walkable area by `radius` grid cells.
   pub fn erode_walkable_area(
     &mut self,
     context: &mut Context,
@@ -173,6 +191,7 @@ impl CompactHeightfield<NoRegions> {
     }
   }
 
+  // Marks all spans in the specified box with the area ID of `new_id`.
   pub fn mark_box_area_with_id(
     &mut self,
     context: &mut Context,
@@ -194,6 +213,7 @@ impl CompactHeightfield<NoRegions> {
     };
   }
 
+  // Marks all spans in the specified cylinder with the area ID of `new_id`.
   pub fn mark_cylinder_area_with_id(
     &mut self,
     context: &mut Context,
@@ -217,6 +237,10 @@ impl CompactHeightfield<NoRegions> {
     };
   }
 
+  // Marks all spans in the convex polygon defined by `vertices` with the area
+  // ID of `new_id`. The convex polygon is extruded vertically based on
+  // `base_height` and `top_height`. Note the Y component of `vertices` is
+  // ignored.
   pub fn mark_convex_poly_area_with_id(
     &mut self,
     context: &mut Context,
@@ -241,6 +265,9 @@ impl CompactHeightfield<NoRegions> {
     };
   }
 
+  // Performs a median filter on the area IDs of spans. This acts like a "blur"
+  // which can remove noise from small unwalkable obstacles (e.g. a pebble
+  // marked as unwalkable).
   pub fn median_filter_area_ids(
     &mut self,
     context: &mut Context,
@@ -278,6 +305,13 @@ impl CompactHeightfield<NoRegions> {
     }
   }
 
+  // Builds regions using watershed partitioning. This makes the
+  // CompactHeightfield immutable (as modifying the underlying data could make
+  // the region data inconsistent). `border_size` is the size of the
+  // non-navigable border around the heightfield. `min_region_area` is the
+  // minimum number of cells allowed to form an isolated island. Any regions
+  // with fewer span counts than `merge_region_area` will prefer to be merged
+  // into a larger region.
   pub fn build_regions(
     mut self,
     context: &mut Context,
@@ -309,6 +343,11 @@ impl CompactHeightfield<NoRegions> {
     }
   }
 
+  // Builds regions by partitioning the heightfield in non-overlapping layers.
+  // This makes the CompactHeightfield immutable (as modifying the underlying
+  // data could make the region data inconsistent). `border_size` is the size
+  // of the non-navigable border around the heightfield. `min_region_area` is
+  // the minimum number of cells allowed to form an isolated island.
   pub fn build_layer_regions(
     mut self,
     context: &mut Context,
@@ -338,6 +377,13 @@ impl CompactHeightfield<NoRegions> {
     }
   }
 
+  // Builds regions using simple monotone partitioning. This makes the
+  // CompactHeightfield immutable (as modifying the underlying data could make
+  // the region data inconsistent). `border_size` is the size of the
+  // non-navigable border around the heightfield. `min_region_area` is the
+  // minimum number of cells allowed to form an isolated island. Any regions
+  // with fewer span counts than `merge_region_area` will prefer to be merged
+  // into a larger region.
   pub fn build_regions_monotone(
     mut self,
     context: &mut Context,
@@ -384,6 +430,8 @@ impl CompactHeightfield<HasRegions> {
   }
 }
 
+// A single span in a CompactHeightfield. A span represents a vertical column of
+// unobstructed space.
 pub struct CompactSpan<'compact_heightfield, TypeState>
 where
   TypeState: CompactHeightfieldState,
@@ -422,6 +470,7 @@ where
     self.y_start_f32() + self.y_size_f32()
   }
 
+  // Returns how/whether a span is connected to neighbouring spans.
   pub fn connection(&self, direction: Direction) -> u32 {
     let shift = match direction {
       Direction::NegX => 0,
