@@ -21,6 +21,7 @@ pub use recastnavigation_sys::{
 };
 pub use vector::Vec3;
 
+// The Recast context when calling Recast code.
 pub struct Context {
   context: wrappers::RawContext,
 }

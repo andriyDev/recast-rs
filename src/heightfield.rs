@@ -8,11 +8,16 @@ use recastnavigation_sys::{
 
 use crate::{wrappers, Context, Vec3};
 
+// A Recast heightfield. This essentially contains a voxelized model of the
+// "solid" parts of the world.
 pub struct Heightfield {
   pub(crate) heightfield: wrappers::RawHeightfield,
 }
 
 impl Heightfield {
+  // Creates a heightfield with the specified dimensions. `cell_horizontal_size`
+  // is for the size of grid cells in the XZ plane. Height of each grid cell is
+  // `cell_height`.
   pub fn new(
     context: &mut Context,
     min_bounds: Vec3<f32>,
@@ -91,10 +96,12 @@ impl Heightfield {
     self.heightfield.ch
   }
 
+  // The number of columns of spans.
   pub fn spans_len(&self) -> usize {
     (self.grid_width() * self.grid_height()) as usize
   }
 
+  // Creates an Iterator to the first span in each column.
   pub fn spans_iter(
     &self,
   ) -> impl Iterator<Item = Option<HeightfieldSpan>> + '_ {
@@ -113,6 +120,7 @@ impl Heightfield {
     })
   }
 
+  // Returns the first span at the `index` column.
   pub fn span(&self, index: usize) -> Option<HeightfieldSpan> {
     // SAFETY: `self.heightfield.spans` is guaranteed to have exactly width *
     // height entries, and pointer alignment is guaranteed by heightfield
@@ -127,6 +135,7 @@ impl Heightfield {
       .map(|span| HeightfieldSpan { heightfield: self, span })
   }
 
+  // Returns the first span of the column at the provided grid coordinates.
   pub fn span_by_grid(
     &self,
     grid_x: i32,
@@ -137,6 +146,11 @@ impl Heightfield {
     self.span((grid_x + grid_y * self.grid_width()) as usize)
   }
 
+  // Rasterizes triangles into the heightfield. `vertices` must come in
+  // triangles (in groups of 3). `area_ids` must hold one ID per triangle
+  // (i.e. `area_ids.len() == vertices.len() / 3`). `flag_merge_threshold`
+  // determines the number of grid cells between span-tops in a single column
+  // within which their flags will be merged (default value is often 1).
   pub fn rasterize_triangles(
     &mut self,
     context: &mut Context,
@@ -181,6 +195,10 @@ impl Heightfield {
     }
   }
 
+  // Rasterizes triangles into the heightfield. `triangles` contains u16 Vec3's,
+  // where x,y,z corresponds to indices of `vertices`. `area_ids` must contain
+  // one ID per triangle (i.e. `area_ids.len() == triangles.len()`). See
+  // `rasterize_triangles` for the meaning of `flag_merge_threshold`.
   // SAFETY: All indices in `triangles` must be in the range of `vertices`
   // indices.
   pub unsafe fn rasterize_indexed_triangles_u16_unchecked(
@@ -221,6 +239,8 @@ impl Heightfield {
     }
   }
 
+  // Same as `rasterize_indexed_triangles_u16_unchecked`, but using i32 instead
+  // of u16 for indices.
   // SAFETY: All indices in `triangles` must be in the range of `vertices`
   // indices.
   pub unsafe fn rasterize_indexed_triangles_i32_unchecked(
@@ -261,6 +281,8 @@ impl Heightfield {
     }
   }
 
+  // Same as `rasterize_indexed_triangles_u16_unchecked`, but panics if any
+  // triangle indices are out of range.
   pub fn rasterize_indexed_triangles_u16(
     &mut self,
     context: &mut Context,
@@ -293,6 +315,8 @@ impl Heightfield {
     }
   }
 
+  // Same as `rasterize_indexed_triangles_i32_unchecked`, but panics if any
+  // triangle indices are out of range.
   pub fn rasterize_indexed_triangles_i32(
     &mut self,
     context: &mut Context,
@@ -328,6 +352,9 @@ impl Heightfield {
     }
   }
 
+  // Marks spans as walkable if they are within `walkable_climb` grid cells of a
+  // neighbouring span. In other words, marks spans as walkable if an agent can
+  // climb up the obstacle from a walkable span.
   pub fn filter_low_hanging_walkable_obstacles(
     &mut self,
     context: &mut Context,
@@ -344,6 +371,10 @@ impl Heightfield {
     };
   }
 
+  // Marks spans as not walkable if it is a "ledge". A ledge is a span where a
+  // neighbour span can be fallen off (there is `walkable_height` to walk off
+  // the span to the neighbour), and the neighbour span cannot climb up to the
+  // ledge span (the spans are at least `walkable_climb` apart).
   pub fn filter_ledge_spans(
     &mut self,
     context: &mut Context,
@@ -362,6 +393,8 @@ impl Heightfield {
     };
   }
 
+  // Marks spans as not walkable if the next span of the column is less than
+  // `walkable_height` above (aka there is not enough height to stand).
   pub fn filter_walkable_low_height_spans(
     &mut self,
     context: &mut Context,
@@ -379,6 +412,8 @@ impl Heightfield {
   }
 }
 
+// A single span of a heightfield. A span is a range of grid cells in the
+// vertical direction and represents a solid part of the world.
 #[derive(Clone, Copy)]
 pub struct HeightfieldSpan<'heightfield> {
   heightfield: &'heightfield Heightfield,
@@ -408,6 +443,9 @@ impl<'heightfield> HeightfieldSpan<'heightfield> {
     self.span.area()
   }
 
+  // Returns the next span in the column. Spans are essentially an intrusive
+  // linked-list, and generally this linked-list stores a single column in the
+  // heightfield.
   pub fn next_span_in_column(&self) -> Option<Self> {
     // SAFETY: The span is properly aligned and allocated by creating/mutating
     // the heightfield successfully.
@@ -415,6 +453,8 @@ impl<'heightfield> HeightfieldSpan<'heightfield> {
       .map(|span| HeightfieldSpan { heightfield: self.heightfield, span })
   }
 
+  // Collects the "column linked-list" of spans into a vector of spans. See
+  // `next_span_in_column` for more about the linked-list.
   pub fn collect(mut head: Option<Self>) -> Vec<Self> {
     let mut vec = Vec::new();
     while let Some(span) = head {
