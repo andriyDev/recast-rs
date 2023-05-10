@@ -6,11 +6,16 @@ use crate::{
   wrappers, CompactHeightfield, CompactHeightfieldState, Context, Vec3,
 };
 
+// A Recast heightfield layer set. Represents a set of heightfield layers.
 pub struct HeightfieldLayerSet {
   pub(crate) layer_set: wrappers::RawHeightfieldLayerSet,
 }
 
 impl HeightfieldLayerSet {
+  // Creates a HeightfieldLayerSet from a CompactHeightfield (in any state).
+  // `border_size` is the size of the non-navigable border around the
+  // heightfield. `walkable_height` is the minimum ceiling height that is
+  // considered walkable.
   pub fn new(
     compact_heightfield: &CompactHeightfield<impl CompactHeightfieldState>,
     context: &mut Context,
@@ -39,10 +44,12 @@ impl HeightfieldLayerSet {
     }
   }
 
+  // Returns the number of layers in the set.
   pub fn len(&self) -> usize {
     self.layer_set.nlayers as usize
   }
 
+  // Gets a specific layer by index.
   pub fn get_layer(&self, index: usize) -> HeightfieldLayer<'_> {
     // SAFETY: `layers` is owned by `self` and the lifetime of the slice is
     // equal to the lifetime of `self`. `layers` has a length of `self.len()` as
@@ -52,6 +59,7 @@ impl HeightfieldLayerSet {
     HeightfieldLayer { layer: &slice[index] }
   }
 
+  // Collects each layer into a Vec.
   pub fn as_vec(&self) -> Vec<HeightfieldLayer<'_>> {
     // SAFETY: `layers` is owned by `self` and the lifetime of the slice is
     // equal to the lifetime of `self`. `layers` has a length of `self.len()` as
@@ -62,6 +70,7 @@ impl HeightfieldLayerSet {
   }
 }
 
+// A single Recast heightfield layer.
 pub struct HeightfieldLayer<'layer_set> {
   layer: &'layer_set recastnavigation_sys::rcHeightfieldLayer,
 }
@@ -99,6 +108,8 @@ impl<'layer_set> HeightfieldLayer<'layer_set> {
     Vec3::new(self.layer.maxx, self.layer.hmax, self.layer.maxy)
   }
 
+  // Returns a slice of the heights of each cell in the layer. Has a length of
+  // `grid_width * grid_height`.
   pub fn heights(&self) -> &[u8] {
     // SAFETY: `layer` is valid and therefore `layer.heights` holds width *
     // height entries.
@@ -110,6 +121,8 @@ impl<'layer_set> HeightfieldLayer<'layer_set> {
     }
   }
 
+  // Returns a slice of the area IDs of each cell in the layer. Has a length of
+  // `grid_width * grid_height`.
   pub fn areas(&self) -> &[u8] {
     // SAFETY: `layer` is valid and therefore `layer.areas` holds width * height
     // entries.
@@ -121,6 +134,8 @@ impl<'layer_set> HeightfieldLayer<'layer_set> {
     }
   }
 
+  // Returns a slice of the packed connection info of each cell in the layer.
+  // Has a length of `grid_width * grid_height`.
   pub fn packed_connection_info(&self) -> &[u8] {
     // SAFETY: `layer` is valid and therefore `layer.cons` holds width * height
     // entries.
