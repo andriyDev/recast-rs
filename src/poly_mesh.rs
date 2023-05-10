@@ -182,9 +182,9 @@ impl<'poly_mesh> PolyMeshPolygon<'poly_mesh> {
   // Gets the "raw" indices of the neighbours of each edge in the polygon. This
   // will always have a length of `poly_mesh.max_vertices_per_polygon`.
   // Polygons with fewer edges (equivalent to number of vertices) than the max
-  // will fill the remaining entries with `NULL_INDEX`. Use `valid_neighbours`
-  // to get the valid slice or use an iterator to filter out `NULL_INDEX`
-  // values.
+  // will fill the remaining entries with `NULL_INDEX`. Edges not connected to
+  // another polygon will also have `NULL_INDEX`. See `valid_neighbours` to only
+  // get the neighbours that correspond to real edges.
   pub fn neighbours(&self) -> &'poly_mesh [u16] {
     let nvp = self.poly_mesh.poly_mesh.nvp as usize;
 
@@ -220,10 +220,10 @@ impl<'poly_mesh> PolyMeshPolygon<'poly_mesh> {
     &vertices[..index]
   }
 
-  // Same as `neighbours`, but sliced to only include indices that aren't
-  // `NULL_INDEX`. Note this involves a linear search to find the end of the
-  // valid neighbours, so it may be more expensive than simply filtering out
-  // `NULL_INDEX`.
+  // Same as `neighbours`, but sliced to only include the indices that
+  // correspond with actual edges of the polygon. Note this means there can
+  // still be `NULL_INDEX` indices, as edges may be on the boundary of the mesh
+  // and therefore not connected to any polygon.
   pub fn valid_neighbours(&self) -> &'poly_mesh [u16] {
     let neighbours = self.neighbours();
 
